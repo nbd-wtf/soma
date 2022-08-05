@@ -16,6 +16,7 @@ import (
 	"github.com/Dexconv/go-bitcoind"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
@@ -29,11 +30,12 @@ import (
 var chainParams = &chaincfg.RegressionNetParams
 
 var (
-	log             = zerolog.New(os.Stderr).Output(zerolog.ConsoleWriter{Out: os.Stderr})
-	chainKey        *btcec.PrivateKey
-	chainPubKeyHash []byte
-	db              *sqlx.DB
-	bc              *bitcoind.Bitcoind
+	log               = zerolog.New(os.Stderr).Output(zerolog.ConsoleWriter{Out: os.Stderr})
+	chainKey          *btcec.PrivateKey
+	chainPubKeyHash   []byte
+	chainPubKeyScript []byte
+	db                *sqlx.DB
+	bc                *bitcoind.Bitcoind
 )
 
 var (
@@ -124,6 +126,7 @@ func main() {
 	chainPubKeyHash = btcutil.Hash160(chainKey.PubKey().SerializeCompressed())
 	chainAddress, _ := btcutil.NewAddressWitnessPubKeyHash(chainPubKeyHash, chainParams)
 	fmt.Println("chain address: ", chainAddress.EncodeAddress())
+	chainPubKeyScript = append([]byte{0, 20}, chainPubKeyHash...)
 
 	// handle commands
 	http.HandleFunc("/", handleInfo)
@@ -246,47 +249,66 @@ func handleInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// make the next presigned tx
-	tx := wire.NewMsgTx(2)
-
-	// spend from the previous output, so add it here as the first
 	tip, _ := chainhash.NewHashFromStr(current.TipTx)
-	tx.AddTxIn(&wire.TxIn{
-		PreviousOutPoint: wire.OutPoint{Hash: *tip, Index: 0},
-		Sequence:         1,
-	})
-
-	// now the only output is the new chain tip
-	tx.AddTxOut(&wire.TxOut{
-		Value:    738,
-		PkScript: append([]byte{0, 20}, chainPubKeyHash...),
-	})
+	packet, _ := psbt.New(
+		[]*wire.OutPoint{{Hash: *tip, Index: 0}},
+		[]*wire.TxOut{{Value: 738, PkScript: chainPubKeyScript}},
+		2,
+		0,
+		[]uint32{1},
+	)
 
 	// sign previous chain tip
+	// we will use this txscript thing to build the signature for us, then we will take it and apply to the psbt
 	witnessProgram, _ := txscript.NewScriptBuilder().AddOp(txscript.OP_0).AddData(chainPubKeyHash).Script()
-	fetcher := txscript.NewCannedPrevOutputFetcher(tx.TxOut[0].PkScript, tx.TxOut[0].Value)
-	sigHashes := txscript.NewTxSigHashes(tx, fetcher)
-	witnessScript, err := txscript.WitnessSignature(
-		tx,
+	fetcher := txscript.NewCannedPrevOutputFetcher(chainPubKeyScript, 738)
+	sigHashes := txscript.NewTxSigHashes(packet.UnsignedTx, fetcher)
+	signature, err := txscript.RawTxInWitnessSignature(
+		packet.UnsignedTx,
 		sigHashes,
 		0,
 		738,
 		witnessProgram,
 		txscript.SigHashSingle|txscript.SigHashAnyOneCanPay,
 		chainKey,
-		true,
 	)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to compute")
 		return
 	}
-	tx.TxIn[0].Witness = witnessScript
+
+	upd, _ := psbt.NewUpdater(packet)
+	upd.AddInWitnessUtxo(wire.NewTxOut(738, chainPubKeyScript), 0)
+	upd.AddInSighashType(txscript.SigHashSingle|txscript.SigHashAnyOneCanPay, 0)
+
+	if _, err := upd.Sign(
+		0,
+		signature,
+		chainKey.PubKey().SerializeCompressed(),
+		nil,
+		nil,
+	); err != nil {
+		log.Fatal().Err(err).Msg("failed to add signature to psbt")
+	}
+	if err := psbt.Finalize(upd.Upsbt, 0); err != nil {
+		log.Fatal().Err(err).Msg("failed to finalize psbt input")
+	}
+
+	upd.Upsbt.UnsignedTx.TxIn[0].Witness = [][]byte{signature, chainKey.PubKey().SerializeCompressed()}
 
 	// finally build the next output
-	b := &bytes.Buffer{}
-	tx.Serialize(b)
+	t := &bytes.Buffer{}
+	upd.Upsbt.UnsignedTx.Serialize(t)
+
+	b64psbt, _ := packet.B64Encode()
+
 	next := struct {
-		PresignedTx string `json:"presigned_tx"`
-	}{hex.EncodeToString(b.Bytes())}
+		Raw  string `json:"raw"`
+		PSBT string `json:"psbt"`
+	}{
+		hex.EncodeToString(t.Bytes()),
+		b64psbt,
+	}
 
 	// and return the response
 	json.NewEncoder(w).Encode(struct {

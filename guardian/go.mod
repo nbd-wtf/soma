@@ -7,6 +7,7 @@ require (
 	github.com/btcsuite/btcd v0.23.1
 	github.com/btcsuite/btcd/btcec/v2 v2.2.0
 	github.com/btcsuite/btcd/btcutil v1.1.1
+	github.com/btcsuite/btcd/btcutil/psbt v1.1.4
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.0.1
 	github.com/jmoiron/sqlx v1.3.5
 	github.com/mitchellh/go-homedir v1.1.0
