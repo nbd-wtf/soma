@@ -29,22 +29,32 @@ import (
 
 var chainParams = &chaincfg.RegressionNetParams
 
-var (
-	log               = zerolog.New(os.Stderr).Output(zerolog.ConsoleWriter{Out: os.Stderr})
-	chainKey          *btcec.PrivateKey
-	chainPubKeyHash   []byte
-	chainPubKeyScript []byte
-	db                *sqlx.DB
-	bc                *bitcoind.Bitcoind
-)
+const CANONICAL_AMOUNT = 738
 
+// paths
 var (
 	configDir, _ = homedir.Expand("~/.config/openchain/guardian")
 	configPath   = path.Join(configDir, "keys.json")
+	sqlitedsn    = path.Join(configDir, "db.sqlite")
 )
 
 // init config dir
 var _ = os.MkdirAll(configDir, 0700)
+
+// global instances
+var (
+	log = zerolog.New(os.Stderr).Output(zerolog.ConsoleWriter{Out: os.Stderr})
+	db  = sqlx.MustOpen("sqlite", sqlitedsn)
+	bc  *bitcoind.Bitcoind
+)
+
+// runtime global values
+var (
+	chainKey          *btcec.PrivateKey
+	chainPubKeyHash   []byte
+	chainPubKeyScript []byte
+	chainHasStarted   bool
+)
 
 type Config struct {
 	ChainKey string `json:"chainkey"`
@@ -52,15 +62,6 @@ type Config struct {
 
 func main() {
 	zerolog.SetGlobalLevel(zerolog.DebugLevel)
-
-	// open sqlite
-	sqlitedsn := path.Join(configDir, "db.sqlite")
-	if dbconn, err := sqlx.Open("sqlite", sqlitedsn); err != nil {
-		log.Fatal().Err(err).Str("path", sqlitedsn).Msg("can't open sqlite")
-		return
-	} else {
-		db = dbconn
-	}
 
 	// create tables
 	db.Exec(`
@@ -74,6 +75,9 @@ func main() {
         );
     `)
 
+	// check if the chain has started
+	db.Get(&chainHasStarted, "SELECT true FROM chain_block_tx")
+
 	// start bitcoind RPC
 	if bitcoindRPC, err := bitcoind.New("127.0.0.1", 18443, "fiatjaf", "fiatjaf", false); err != nil {
 		log.Fatal().Err(err).Msg("can't connect to bitcoind")
@@ -86,7 +90,7 @@ func main() {
 	if b, err := ioutil.ReadFile(configPath); err != nil {
 		if strings.HasSuffix(err.Error(), "no such file or directory") {
 			// create a new private key
-			fmt.Println("creating private key and storing it on ", configPath)
+			log.Info().Str("path", configPath).Msg("creating private key and storing it")
 			if chainKey, err = btcec.NewPrivateKey(); err != nil {
 				log.Fatal().Err(err).Msg("error creating chain key")
 				return
@@ -125,7 +129,7 @@ func main() {
 	// print addresses
 	chainPubKeyHash = btcutil.Hash160(chainKey.PubKey().SerializeCompressed())
 	chainAddress, _ := btcutil.NewAddressWitnessPubKeyHash(chainPubKeyHash, chainParams)
-	fmt.Println("chain address: ", chainAddress.EncodeAddress())
+	log.Debug().Str("address", chainAddress.String()).Msg("")
 	chainPubKeyScript = append([]byte{0, 20}, chainPubKeyHash...)
 
 	// handle commands
@@ -200,13 +204,28 @@ func processBlock(blockHeight uint64, blockHex string) error {
 			var index uint64
 			if err := txn.Get(
 				&index,
-				"SELECT idx FROM chain_block_tx WHERE txid = $1",
+				"SELECT idx + 1 FROM chain_block_tx WHERE txid = $1",
 				input.PreviousOutPoint.Hash.String(),
-			); err == sql.ErrNoRows {
-				// this was just a dummy output that doesn't reference the chain tx, ignore
+			); err == sql.ErrNoRows && chainHasStarted {
+				// this was just a dummy output that doesn't reference the chain tx,
+				// just ignore it
 				log.Warn().Str("txid", tx.Hash().String()).
-					Msg("tx sent to chain address but not part of the canonical chain")
+					Msg("got tx but not part of the canonical chain")
 				continue
+			} else if err == sql.ErrNoRows && !chainHasStarted {
+				// the chain hasn't started yet, so we will take the first output we
+				// can get that matches the canonical amount and it will be the
+				// genesis block
+				if output.Value != CANONICAL_AMOUNT {
+					log.Warn().
+						Str("txid", tx.Hash().String()).
+						Int64("sats", output.Value).
+						Msg("got tx but can't be the genesis since the amount is wrong")
+					continue
+				} else {
+					// it's ok, we will use this one, just proceed
+					index = 0
+				}
 			} else if err != nil {
 				return fmt.Errorf("failed to read chain_block_tx: %w", err)
 			}
@@ -223,7 +242,7 @@ func processBlock(blockHeight uint64, blockHex string) error {
 				return fmt.Errorf("failed to insert into chain_block_tx: %w", err)
 			}
 
-			fmt.Println("new openchain tip found", tx.Hash().String())
+			log.Info().Str("txid", tx.Hash().String()).Msg("new openchain tip found")
 		}
 	}
 
@@ -252,7 +271,7 @@ func handleInfo(w http.ResponseWriter, r *http.Request) {
 	tip, _ := chainhash.NewHashFromStr(current.TipTx)
 	packet, _ := psbt.New(
 		[]*wire.OutPoint{{Hash: *tip, Index: 0}},
-		[]*wire.TxOut{{Value: 738, PkScript: chainPubKeyScript}},
+		[]*wire.TxOut{{Value: CANONICAL_AMOUNT, PkScript: chainPubKeyScript}},
 		2,
 		0,
 		[]uint32{1},
@@ -261,13 +280,13 @@ func handleInfo(w http.ResponseWriter, r *http.Request) {
 	// sign previous chain tip
 	// we will use this txscript thing to build the signature for us, then we will take it and apply to the psbt
 	witnessProgram, _ := txscript.NewScriptBuilder().AddOp(txscript.OP_0).AddData(chainPubKeyHash).Script()
-	fetcher := txscript.NewCannedPrevOutputFetcher(chainPubKeyScript, 738)
+	fetcher := txscript.NewCannedPrevOutputFetcher(chainPubKeyScript, CANONICAL_AMOUNT)
 	sigHashes := txscript.NewTxSigHashes(packet.UnsignedTx, fetcher)
 	signature, err := txscript.RawTxInWitnessSignature(
 		packet.UnsignedTx,
 		sigHashes,
 		0,
-		738,
+		CANONICAL_AMOUNT,
 		witnessProgram,
 		txscript.SigHashSingle|txscript.SigHashAnyOneCanPay,
 		chainKey,
@@ -278,7 +297,7 @@ func handleInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	upd, _ := psbt.NewUpdater(packet)
-	upd.AddInWitnessUtxo(wire.NewTxOut(738, chainPubKeyScript), 0)
+	upd.AddInWitnessUtxo(wire.NewTxOut(CANONICAL_AMOUNT, chainPubKeyScript), 0)
 	upd.AddInSighashType(txscript.SigHashSingle|txscript.SigHashAnyOneCanPay, 0)
 
 	if _, err := upd.Sign(
