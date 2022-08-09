@@ -10,6 +10,7 @@ require (
 	github.com/btcsuite/btcd/btcutil/psbt v1.1.4
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.0.1
 	github.com/jmoiron/sqlx v1.3.5
+	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/rs/zerolog v1.27.0
 	modernc.org/sqlite v1.18.0

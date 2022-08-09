@@ -22,29 +22,37 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/jmoiron/sqlx"
+	"github.com/kelseyhightower/envconfig"
 	"github.com/mitchellh/go-homedir"
 	"github.com/rs/zerolog"
 	_ "modernc.org/sqlite"
 )
 
+type Settings struct {
+	BitcoindHost     string `envconfig:"BITCOIND_HOST" default:"127.0.0.1"`
+	BitcoindPort     int    `envconfig:"BITCOIND_PORT" default:"8332"`
+	BitcoindUser     string `envconfig:"BITCOIND_USER"`
+	BitcoindPassword string `envconfig:"BITCOIND_PASSWORD"`
+
+	ConfigPath string `json:"CONFIG_PATH" default:"~/.config/openchain/guardian"`
+}
+
 var chainParams = &chaincfg.RegressionNetParams
 
 const CANONICAL_AMOUNT = 738
 
-// paths
+// configs
 var (
-	configDir, _ = homedir.Expand("~/.config/openchain/guardian")
-	configPath   = path.Join(configDir, "keys.json")
-	sqlitedsn    = path.Join(configDir, "db.sqlite")
+	s          Settings
+	configDir  string
+	configPath string
+	sqlitedsn  string
 )
-
-// init config dir
-var _ = os.MkdirAll(configDir, 0700)
 
 // global instances
 var (
 	log = zerolog.New(os.Stderr).Output(zerolog.ConsoleWriter{Out: os.Stderr})
-	db  = sqlx.MustOpen("sqlite", sqlitedsn)
+	db  *sqlx.DB
 	bc  *bitcoind.Bitcoind
 )
 
@@ -63,7 +71,23 @@ type Config struct {
 func main() {
 	zerolog.SetGlobalLevel(zerolog.DebugLevel)
 
+	// environment variables
+	err := envconfig.Process("", &s)
+	if err != nil {
+		log.Fatal().Err(err).Msg("couldn't process envconfig.")
+		return
+	}
+
+	log.Print(s)
+
+	// paths
+	configDir, _ = homedir.Expand(s.ConfigPath)
+	configPath = path.Join(configDir, "keys.json")
+	sqlitedsn = path.Join(configDir, "db.sqlite")
+	os.MkdirAll(configDir, 0700)
+
 	// create tables
+	db = sqlx.MustOpen("sqlite", sqlitedsn)
 	db.Exec(`
         CREATE TABLE kv (
           key TEXT PRIMARY KEY,
@@ -79,7 +103,7 @@ func main() {
 	db.Get(&chainHasStarted, "SELECT true FROM chain_block_tx")
 
 	// start bitcoind RPC
-	if bitcoindRPC, err := bitcoind.New("127.0.0.1", 18443, "fiatjaf", "fiatjaf", false); err != nil {
+	if bitcoindRPC, err := bitcoind.New(s.BitcoindHost, s.BitcoindPort, s.BitcoindUser, s.BitcoindPassword, false); err != nil {
 		log.Fatal().Err(err).Msg("can't connect to bitcoind")
 		return
 	} else {
@@ -103,14 +127,6 @@ func main() {
 				log.Fatal().Err(err).Msg("error saving config key")
 				return
 			}
-
-			// determine that we are starting now so we don't have to scan the entire chain
-			if count, err := bc.GetBlockCount(); err != nil {
-				log.Fatal().Err(err).Msg("error getting block count")
-				return
-			} else {
-				db.MustExec("INSERT INTO kv VALUES ('blockheight', $1)", count)
-			}
 		} else {
 			log.Fatal().Err(err).Msg("error reading config file")
 			return
@@ -124,6 +140,16 @@ func main() {
 		if chainKey == nil {
 			log.Fatal().Err(err).Msg("error parsing config json")
 		}
+	}
+
+	// if we don't have any block data in the database,
+	// determine that we are starting now so we don't have to scan the entire chain
+	if count, err := bc.GetBlockCount(); err != nil {
+		log.Fatal().Err(err).Msg("error getting block count")
+		return
+	} else {
+		// we just do this, it will fail if the key is already set
+		db.Exec("INSERT INTO kv VALUES ('blockheight', $1)", count)
 	}
 
 	// print addresses
