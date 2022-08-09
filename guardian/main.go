@@ -29,15 +29,17 @@ import (
 )
 
 type Settings struct {
+	BitcoinChain string `envconfig:"BITCOIN_CHAIN" default:"mainnet"`
+
 	BitcoindHost     string `envconfig:"BITCOIND_HOST" default:"127.0.0.1"`
-	BitcoindPort     int    `envconfig:"BITCOIND_PORT" default:"8332"`
+	BitcoindPort     int    `envconfig:"BITCOIND_PORT"`
 	BitcoindUser     string `envconfig:"BITCOIND_USER"`
 	BitcoindPassword string `envconfig:"BITCOIND_PASSWORD"`
 
 	ConfigPath string `json:"CONFIG_PATH" default:"~/.config/openchain/guardian"`
 }
 
-var chainParams = &chaincfg.RegressionNetParams
+var chainParams = &chaincfg.MainNetParams
 
 const CANONICAL_AMOUNT = 738
 
@@ -78,7 +80,30 @@ func main() {
 		return
 	}
 
-	log.Print(s)
+	// configs
+	switch s.BitcoinChain {
+	case "mainnet":
+		chainParams = &chaincfg.MainNetParams
+	case "testnet":
+		chainParams = &chaincfg.TestNet3Params
+	case "signet":
+		chainParams = &chaincfg.SigNetParams
+	case "regtest":
+		chainParams = &chaincfg.RegressionNetParams
+	}
+
+	if s.BitcoindPort == 0 {
+		switch s.BitcoinChain {
+		case "mainnet":
+			s.BitcoindPort = 8332
+		case "testnet":
+			s.BitcoindPort = 18332
+		case "signet":
+			s.BitcoindPort = 38332
+		case "regtest":
+			s.BitcoindPort = 18443
+		}
+	}
 
 	// paths
 	configDir, _ = homedir.Expand(s.ConfigPath)
