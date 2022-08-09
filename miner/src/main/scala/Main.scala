@@ -9,6 +9,7 @@ import scoin._
 import scodec.bits.ByteVector
 
 import unixsocket.UnixSocket
+import scoin.Crypto.PrivateKey.apply
 
 object Main {
   val logger = new nlog.Logger()
@@ -132,42 +133,49 @@ object Main {
         val htlc = params("htlc")
         logger.debug.item("htlc", htlc).msg("htlc_accepted")
       }
-      case "psbt" => {
-        Psbt
-          .fromBase64(params("psbt").str)
-          .map { receivedPsbt =>
-            logger.debug
+      case "psbt" =>
+        rpc("listfunds").onComplete { resp =>
+          for {
+            funds <- resp
+            outputs = funds("outputs").arr
+            receivedPsbt <- Psbt.fromBase64(params("psbt").str)
+            _ = logger.debug
               .item("inputs", receivedPsbt.inputs)
               .item("outputs", receivedPsbt.outputs)
               .msg("psbt parsed")
 
-            val psbt = Psbt(
+            psbt = Psbt(
               receivedPsbt.global.tx
-                .addInput(
-                  TxIn(
-                    outPoint = OutPoint(
-                      ByteVector32(
-                        ByteVector
-                          .fromValidHex(
-                            "e40f8d3a2a2db58684b3e7fff74e354be8abdae20bf2d4c232c6353192cc33d7"
-                          )
-                          .reverse
-                      ),
-                      0
-                    ),
-                    sequence = 0,
-                    signatureScript = ByteVector.empty
-                  )
+                .copy(
+                  txIn = List(
+                    receivedPsbt.global.tx.txIn(0)
+                  ) ++
+                    outputs.toList
+                      .filter(utxo =>
+                        utxo("status").str == "confirmed" &&
+                          utxo("reserved").bool == false
+                      )
+                      .map(utxo =>
+                        TxIn(
+                          outPoint = OutPoint(
+                            ByteVector32(
+                              ByteVector
+                                .fromValidHex(utxo("txid").str)
+                                .reverse
+                            ),
+                            utxo("output").num.toInt
+                          ),
+                          sequence = 0,
+                          signatureScript = ByteVector.empty
+                        )
+                      )
                 )
             )
-
-            psbt.copy(inputs = receivedPsbt.inputs(0) +: psbt.inputs.drop(1))
-          } match {
-          case Success(psbt) =>
-            logger.debug.item(Psbt.toBase64(psbt)).msg("new")
-          case Failure(err) => logger.err.item(err).msg("failed")
+            finalPsbt = psbt.copy(inputs =
+              receivedPsbt.inputs(0) +: psbt.inputs.drop(1)
+            )
+          } yield reply(Psbt.toBase64(finalPsbt))
         }
-      }
     }
   }
 }
