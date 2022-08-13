@@ -2,14 +2,15 @@ import java.io.ByteArrayInputStream
 import scala.util.{Try, Success, Failure}
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
+import scala.util.ChainingOps
 import scala.scalanative.loop.EventLoop.loop
 import scala.scalanative.loop.{Poll, Timer}
+import com.github.lolgab.httpclient.{Request, Method}
+import scodec.bits.ByteVector
 import ujson._
 import scoin._
-import scodec.bits.ByteVector
-
+import scoin.ScriptElt.OP_RETURN
 import unixsocket.UnixSocket
-import scoin.Crypto.PrivateKey.apply
 
 object Main {
   val logger = new nlog.Logger()
@@ -108,8 +109,8 @@ object Main {
             ),
             "rpcmethods" -> ujson.Arr(
               ujson.Obj(
-                "name" -> "psbt",
-                "usage" -> "psbt",
+                "name" -> "publish",
+                "usage" -> "hash fee",
                 "description" -> "something"
               )
             ),
@@ -133,49 +134,112 @@ object Main {
         val htlc = params("htlc")
         logger.debug.item("htlc", htlc).msg("htlc_accepted")
       }
-      case "psbt" =>
-        rpc("listfunds").onComplete { resp =>
-          for {
-            funds <- resp
-            outputs = funds("outputs").arr
-            receivedPsbt <- Psbt.fromBase64(params("psbt").str)
-            _ = logger.debug
-              .item("inputs", receivedPsbt.inputs)
-              .item("outputs", receivedPsbt.outputs)
-              .msg("psbt parsed")
+      case "publish" => {
+        val hash = ByteVector.fromValidHex(params(0).str)
+        val fee = Satoshi(params(1).num.toLong)
 
-            psbt = Psbt(
-              receivedPsbt.global.tx
-                .copy(
-                  txIn = List(
-                    receivedPsbt.global.tx.txIn(0)
-                  ) ++
-                    outputs.toList
-                      .filter(utxo =>
-                        utxo("status").str == "confirmed" &&
-                          utxo("reserved").bool == false
-                      )
-                      .map(utxo =>
-                        TxIn(
-                          outPoint = OutPoint(
-                            ByteVector32(
-                              ByteVector
-                                .fromValidHex(utxo("txid").str)
-                                .reverse
-                            ),
-                            utxo("output").num.toInt
-                          ),
-                          sequence = 0,
-                          signatureScript = ByteVector.empty
-                        )
-                      )
-                )
+        publishBlock(hash, fee)
+      }
+    }
+  }
+
+  def publishBlock(blockHash: ByteVector, fee: Satoshi): Future[Unit] = {
+    val outputs = rpc("listfunds")
+      .map(_("outputs").arr)
+      .filter(utxo =>
+        utxo("status").str == "confirmed" &&
+          utxo("reserved").bool == false
+      )
+    val nextPsbt = Request()
+      .method(Method.GET)
+      .url("http://localhost:10738")
+      .future()
+      .map(_.body)
+      .map(ujson.read(_))
+      .map(_("next")("psbt").str)
+      .map(Psbt.fromBase64(_))
+    val ourScriptPubKey = rpc("dev-listaddr", ujson.Obj("bip32_max_index" -> 0))
+      .map(_("addresses")(0)("pubkey").str)
+      .map(ByteVector.fromValidHex(_))
+      .map(Crypto.hash160(_))
+      .map(pubkeyhash =>
+        ByteVector.concat(
+          List(ByteVector.fromByte(0), ByteVector.fromByte(20), pubkeyhash)
+        )
+      )
+
+    Future.sequence(List(outpus, nextPsbt, ourScriptPubKey)).onComplete {
+      case (List(
+            Success(nextPsbt),
+            Success(outputs),
+            Success(ourScriptPubKey)
+          )) => {
+        val inputSum =
+          MilliSatoshi(outputs.map(_("amount_msat").num)).toSatoshi
+
+        val psbt = Psbt(
+          nextPsbt.global.tx
+            .copy(
+              txIn = List(
+                nextPsbt.global.tx.txIn(0)
+              ) ++
+                // add our inputs
+                outputs
+                  .map(utxo =>
+                    TxIn(
+                      outPoint = OutPoint(
+                        ByteVector32(
+                          ByteVector
+                            .fromValidHex(utxo("txid").str)
+                            .reverse
+                        ),
+                        utxo("output").num.toInt
+                      ),
+                      sequence = 0,
+                      signatureScript = ByteVector.empty
+                    )
+                  ),
+              txOut = List(
+                // the canonical output
+                nextPsbt.global.tx.txOut(0),
+
+                // add our OP_RETURN
+                TxOut(Satoshi(0L), Script.write(OP_RETURN :: blockHash)),
+
+                // add our change
+                TxOut(inputSum - fee, ourScriptPubKey)
+              )
             )
-            finalPsbt = psbt.copy(inputs =
-              receivedPsbt.inputs(0) +: psbt.inputs.drop(1)
-            )
-          } yield reply(Psbt.toBase64(finalPsbt))
-        }
+        )
+          .pipe(interm =>
+            interm.copy(inputs = nextPsbt.inputs(0) +: interm.inputs.drop(1))
+          )
+          .pipe(Psbt.toBase64(_))
+
+        rpc("reserveinputs", ujson.Obj("psbt" -> psbt))
+          .flatMap { _ =>
+            rpc("signpsbt", ujson.Obj("psbt" -> psbt))
+          }
+          .flatMap { resp =>
+            val signedPsbt = resp("signed_psbt").str
+            rpc("sendpsbt", ujson.Obj("psbt" -> signedPsbt))
+          }
+          .onComplete {
+            case Success(res) =>
+              logger.info
+                .item("tx", res("tx").str)
+                .item("txid", res("txid").str)
+                .msg("tx published")
+            case Failure(err) =>
+              logger.err
+                .item("err", err)
+                .msg("something went wrong when mining block")
+          }
+      }
+      case something =>
+        logger.err
+          .item("something", something)
+          .msg("something went wrong when preparing the tx for publication")
     }
   }
 }
