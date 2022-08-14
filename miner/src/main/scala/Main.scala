@@ -3,19 +3,22 @@ import scala.util.{Try, Success, Failure}
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import scala.util.ChainingOps
+import util.chaining.scalaUtilChainingOps
 import scala.scalanative.loop.EventLoop.loop
 import scala.scalanative.loop.{Poll, Timer}
 import com.github.lolgab.httpclient.{Request, Method}
 import scodec.bits.ByteVector
 import ujson._
 import scoin._
-import scoin.ScriptElt.OP_RETURN
 import unixsocket.UnixSocket
+
+case class Tx(id: String, hex: String)
 
 object Main {
   val logger = new nlog.Logger()
 
   private var rpcAddr: String = ""
+  private var guardianURL: String = ""
   private var nextId = 0
 
   def main(args: Array[String]): Unit = {
@@ -96,7 +99,7 @@ object Main {
       case "getmanifest" =>
         reply(
           ujson.Obj(
-            "dynamic" -> false, // custom features can only be set on non-dynamic
+            "dynamic" -> true,
             "options" -> ujson.Arr(),
             "subscriptions" -> ujson.Arr(
               "sendpay_success",
@@ -105,13 +108,21 @@ object Main {
               "disconnect"
             ),
             "hooks" -> ujson.Arr(
-              // ujson.Obj("name" -> "htlc_accepted")
+              ujson.Obj("name" -> "invoice_payment")
             ),
             "rpcmethods" -> ujson.Arr(
               ujson.Obj(
                 "name" -> "publish",
                 "usage" -> "hash fee",
                 "description" -> "something"
+              )
+            ),
+            "options" -> ujson.Arr(
+              ujson.Obj(
+                "name" -> "guardian-url",
+                "type" -> "string",
+                "default" -> "http://localhost:10738",
+                "description" -> "URL of the openchain guardian."
               )
             ),
             "notifications" -> ujson.Arr(),
@@ -129,117 +140,115 @@ object Main {
 
         val lightningDir = params("configuration")("lightning-dir").str
         rpcAddr = lightningDir + "/" + params("configuration")("rpc-file").str
+        guardianURL = params("options")("guardian-url").str
       }
-      case "htlc_accepted" => {
-        val htlc = params("htlc")
-        logger.debug.item("htlc", htlc).msg("htlc_accepted")
+      case "invoice_payment" => {
+        val label = params("payment")("label").str
+        logger.debug.item("label", label).msg("invoice payment received")
+        reply(ujson.Obj("result" -> "continue"))
       }
       case "publish" => {
         val hash = ByteVector.fromValidHex(params(0).str)
         val fee = Satoshi(params(1).num.toLong)
 
         publishBlock(hash, fee)
+          .onComplete {
+            case Success(Tx(id, hex)) =>
+              reply(ujson.Obj("txid" -> id, "tx" -> hex))
+            case Failure(err) => replyError(s"$err")
+          }
       }
     }
   }
 
-  def publishBlock(blockHash: ByteVector, fee: Satoshi): Future[Unit] = {
-    val outputs = rpc("listfunds")
-      .map(_("outputs").arr)
-      .filter(utxo =>
-        utxo("status").str == "confirmed" &&
-          utxo("reserved").bool == false
-      )
-    val nextPsbt = Request()
-      .method(Method.GET)
-      .url("http://localhost:10738")
-      .future()
-      .map(_.body)
-      .map(ujson.read(_))
-      .map(_("next")("psbt").str)
-      .map(Psbt.fromBase64(_))
-    val ourScriptPubKey = rpc("dev-listaddr", ujson.Obj("bip32_max_index" -> 0))
-      .map(_("addresses")(0)("pubkey").str)
-      .map(ByteVector.fromValidHex(_))
-      .map(Crypto.hash160(_))
-      .map(pubkeyhash =>
-        ByteVector.concat(
-          List(ByteVector.fromByte(0), ByteVector.fromByte(20), pubkeyhash)
+  def publishBlock(blockHash: ByteVector, fee: Satoshi): Future[Tx] = {
+    val finalPsbt = for {
+      listfunds <- rpc("listfunds")
+      guardianResponse <- Request()
+        .method(Method.GET)
+        .url(guardianURL)
+        .future()
+      listaddrs <- rpc("dev-listaddrs", ujson.Obj("bip32_max_index" -> 0))
+    } yield {
+      val outputs = listfunds("outputs").arr
+        .filter(utxo =>
+          utxo("status").str == "confirmed" &&
+            utxo("reserved").bool == false
         )
-      )
-
-    Future.sequence(List(outpus, nextPsbt, ourScriptPubKey)).onComplete {
-      case (List(
-            Success(nextPsbt),
-            Success(outputs),
-            Success(ourScriptPubKey)
-          )) => {
-        val inputSum =
-          MilliSatoshi(outputs.map(_("amount_msat").num)).toSatoshi
-
-        val psbt = Psbt(
-          nextPsbt.global.tx
-            .copy(
-              txIn = List(
-                nextPsbt.global.tx.txIn(0)
-              ) ++
-                // add our inputs
-                outputs
-                  .map(utxo =>
-                    TxIn(
-                      outPoint = OutPoint(
-                        ByteVector32(
-                          ByteVector
-                            .fromValidHex(utxo("txid").str)
-                            .reverse
-                        ),
-                        utxo("output").num.toInt
-                      ),
-                      sequence = 0,
-                      signatureScript = ByteVector.empty
-                    )
-                  ),
-              txOut = List(
-                // the canonical output
-                nextPsbt.global.tx.txOut(0),
-
-                // add our OP_RETURN
-                TxOut(Satoshi(0L), Script.write(OP_RETURN :: blockHash)),
-
-                // add our change
-                TxOut(inputSum - fee, ourScriptPubKey)
-              )
-            )
-        )
-          .pipe(interm =>
-            interm.copy(inputs = nextPsbt.inputs(0) +: interm.inputs.drop(1))
+      val nextPsbt = guardianResponse
+        .pipe(_.body)
+        .pipe(ujson.read(_))
+        .pipe(_("next")("psbt").str)
+        .pipe(Psbt.fromBase64(_))
+        .get
+      val ourScriptPubKey = listaddrs
+        .pipe(_("addresses")(0)("pubkey").str)
+        .pipe(ByteVector.fromValidHex(_))
+        .pipe(Crypto.hash160(_))
+        .pipe(pubkeyhash =>
+          ByteVector.concat(
+            List(ByteVector.fromByte(0), ByteVector.fromByte(20), pubkeyhash)
           )
-          .pipe(Psbt.toBase64(_))
+        )
 
-        rpc("reserveinputs", ujson.Obj("psbt" -> psbt))
-          .flatMap { _ =>
-            rpc("signpsbt", ujson.Obj("psbt" -> psbt))
-          }
-          .flatMap { resp =>
-            val signedPsbt = resp("signed_psbt").str
-            rpc("sendpsbt", ujson.Obj("psbt" -> signedPsbt))
-          }
-          .onComplete {
-            case Success(res) =>
-              logger.info
-                .item("tx", res("tx").str)
-                .item("txid", res("txid").str)
-                .msg("tx published")
-            case Failure(err) =>
-              logger.err
-                .item("err", err)
-                .msg("something went wrong when mining block")
-          }
-      }
-      case something =>
-        logger.err
-          .item("something", something)
-          .msg("something went wrong when preparing the tx for publication")
+      val inputSum = outputs
+        .map(utxo => MilliSatoshi(utxo("amount_msat").num.toLong).toSatoshi)
+        .fold(Satoshi(0))(_ + _)
+
+      if (inputSum < fee)
+        throw new Exception(
+          s"not enough unreserved and confirmed outputs to pay fee of $fee"
+        )
+
+      Psbt(
+        nextPsbt.global.tx
+          .copy(
+            txIn = List(
+              nextPsbt.global.tx.txIn(0)
+            ) ++
+              // add our inputs
+              outputs
+                .map(utxo =>
+                  TxIn(
+                    outPoint = OutPoint(
+                      ByteVector32(
+                        ByteVector
+                          .fromValidHex(utxo("txid").str)
+                          .reverse
+                      ),
+                      utxo("output").num.toInt
+                    ),
+                    sequence = 0,
+                    signatureScript = ByteVector.empty
+                  )
+                ),
+            txOut = List(
+              // the canonical output
+              nextPsbt.global.tx.txOut(0),
+
+              // add our OP_RETURN
+              TxOut(
+                Satoshi(0L),
+                Script.write(List(OP_RETURN, OP_PUSHDATA(blockHash)))
+              ),
+
+              // add our change
+              TxOut(inputSum - fee, ourScriptPubKey)
+            )
+          )
+      )
+        .pipe(interm =>
+          interm.copy(inputs = nextPsbt.inputs(0) +: interm.inputs.drop(1))
+        )
+        .pipe(Psbt.toBase64(_))
     }
+
+    for {
+      psbt <- finalPsbt
+      _ <- rpc("reserveinputs", ujson.Obj("psbt" -> psbt))
+      signedPsbt <- rpc("signpsbt", ujson.Obj("psbt" -> psbt))
+        .map(_("signed_psbt").str)
+      res <- rpc("sendpsbt", ujson.Obj("psbt" -> signedPsbt))
+    } yield Tx(res("txid").str, res("tx").str)
   }
 }
