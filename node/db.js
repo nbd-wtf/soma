@@ -3,20 +3,43 @@ import Database from 'better-sqlite3'
 export const blocks = new Database('blocks.sqlite')
 export const state = new Database('state.sqlite')
 
+// initialization
 blocks.exec(`
-  CREATE TABLE IF NOT EXISTS blocks (height INTEGER PRIMARY KEY, hash BLOB, bitcoin_height INTEGER, serialized BLOB);
-  create unique index if not exists block_hash on blocks (hash);
+  CREATE TABLE IF NOT EXISTS bmm (
+    bitcoin_height INTEGER PRIMARY KEY,
+    txid TEXT NOT NULL,
+    bmm_hash BLOB
+  );
+  CREATE TABLE IF NOT EXISTS blocks (
+    height INTEGER PRIMARY KEY,
+    prev BLOB NOT NULL,
+    hash BLOB NOT NULL,
+    serialized BLOB NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS block_hash ON blocks (hash);
 `)
 
-state.exec(`
-  CREATE TABLE IF NOT EXISTS assets (id BLOB PRIMARY KEY, counter INT, owner BLOB);
-`)
-
-const getLatestBlockStmt = blocks.prepare(
-  `SELECT * FROM blocks ORDER by height DESC LIMIT 1`
+state.exec(
+  `CREATE TABLE IF NOT EXISTS assets (id BLOB PRIMARY KEY, counter INT, owner BLOB);`
 )
-export function getLatestBlock() {
-  return getLatestBlockStmt.get()
+
+// db functions
+const addBMMTransactionStmt = blocks.prepare(
+  `INSERT INTO bmm (bitcoin_height, txid, bmm_hash) VALUES ($bitcoinHeight, $txid, $bmmHash)`
+)
+export function addBMMTransaction(bitcoinHeight, txid, bmmHash) {
+  addBMMTransactionStmt.run({
+    $bitcoinHeight: bitcoinHeight,
+    $txid: txid,
+    $bmmHash: bmmHash
+  })
+}
+
+const getBlockForBmmHashStmt = blocks.prepare(
+  `SELECT * FROM blocks WHERE hash = $bmmHash`
+)
+export function getBlockForBmmHash(bmmHash) {
+  return getBlockForBmmHashStmt.get({$bmmHash: bmmHash})
 }
 
 const getBlockStmt = blocks.prepare(`SELECT * FROM blocks WHERE height = ?`)

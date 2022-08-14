@@ -2,7 +2,8 @@
   "type": "module",
   "dependencies": {
     "better-sqlite3": "^7.6.2",
-    "hyperswarm": "^3.0.4"
+    "hyperswarm": "^3.0.4",
+    "node-fetch": "^3.2.10"
   },
   "devDependencies": {
     "eslint": "^8.20.0",
