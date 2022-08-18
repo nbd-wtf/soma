@@ -3,12 +3,8 @@
   "dependencies": {
     "better-sqlite3": "^7.6.2",
     "hyperswarm": "^3.0.4",
-    "node-fetch": "^3.2.10"
-  },
-  "devDependencies": {
-    "eslint": "^8.20.0",
-    "eslint-config-prettier": "^8.5.0",
-    "eslint-plugin-babel": "^5.3.1",
-    "prettier": "^2.7.1"
+    "node-fetch": "^3.2.10",
+    "@noble/secp256k1": "1.6.3",
+    "hash.js": "1.1.7"
   }
 }

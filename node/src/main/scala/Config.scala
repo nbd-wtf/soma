@@ -1,8 +1,18 @@
 import scala.scalajs.js
-import scala.scalajs.js.annotation.JSGlobal
+import scala.scalajs.js.annotation.{JSImport, JSGlobal}
 import scodec.bits.ByteVector
 
 object Config {
+  private val home = homedir()
+  def datadir = process.env.DATADIR.toOption
+    .map(_.replace("~", home))
+    .getOrElse(s"$home/.config/openchain/node/")
+
+  mkdirSync(
+    datadir,
+    js.Dictionary("recursive" -> true).asInstanceOf[js.Object]
+  )
+
   def genesisTx: String = process.env.GENESIS_TX
   def bitcoinHost: String =
     process.env.BITCOIND_HOST.toOption.getOrElse("127.0.0.1")
@@ -30,10 +40,24 @@ object process extends js.Object {
 
 @js.native
 trait Env extends js.Object {
+  val DATADIR: js.UndefOr[String] = js.native
   val GENESIS_TX: String = js.native
   val BITCOIN_CHAIN: String = js.native
   val BITCOIND_HOST: js.UndefOr[String] = js.native
   val BITCOIND_PORT: js.UndefOr[String] = js.native
   val BITCOIND_USER: String = js.native
   val BITCOIND_PASSWORD: String = js.native
+}
+
+@js.native
+@JSImport("node:os", "homedir")
+object homedir extends js.Object {
+  def apply(): String = js.native
+}
+
+@js.native
+@JSImport("node:fs", "mkdirSync")
+object mkdirSync extends js.Object {
+  def apply(path: String, options: js.Object): js.Promise[Unit] =
+    js.native
 }

@@ -11,6 +11,7 @@ object Main {
     Database.init()
     BitcoinManager.start()
     PeerManager.start()
+    HttpServer.start()
   }
 }
 
@@ -57,6 +58,21 @@ object PeerManager {
         println(s"got message: $value")
         value match {
           case RequestBlock(hash) =>
+            peer.write(
+              WireMessage.codec
+                .encode(
+                  AnswerBlock(
+                    hash,
+                    Database.getBlock(hash)
+                  )
+                )
+                .toOption
+                .get
+                .toByteVector
+                .toUint8Array
+            )
+          case AnswerBlock(hash, Some(block)) =>
+            Database.insertBlock(hash, block)
         }
       }
       case Attempt.Failure(err) => println(s"got unknown message $msg")
@@ -106,12 +122,12 @@ object BitcoinManager {
       .call("getchaintips")
       .foreach { tips =>
         if (tips(0)("height").num.toInt < height) {
-          println("waiting a minute")
+          // println("waiting for the next block")
           js.timers.setTimeout(60000) {
             inspectNextBlocks(bmmHeight, tipTxid, height)
           }
         } else {
-          print(s"inspecting bitcoin block $height... ")
+          // print(s"inspecting bitcoin block $height... ")
           BitcoinRPC
             .call("getblockhash", ujson.Arr(height))
             .map(_.str)
@@ -140,10 +156,10 @@ object BitcoinManager {
                         .toByteVector
                     )
                   }
-                  inspectNextBlocks(bmmHeight + 1, txid, height + 1)
+                  Future { inspectNextBlocks(bmmHeight + 1, txid, height + 1) }
                 case None =>
-                  println("didn't find")
-                  inspectNextBlocks(bmmHeight + 1, tipTxid, height + 1)
+                  // println("didn't find")
+                  Future { inspectNextBlocks(bmmHeight, tipTxid, height + 1) }
               }
             }
         }
