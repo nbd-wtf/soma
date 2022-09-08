@@ -28,7 +28,7 @@ type Settings struct {
 	BitcoindUser     string `envconfig:"BITCOIND_USER"`
 	BitcoindPassword string `envconfig:"BITCOIND_PASSWORD"`
 
-	ConfigPath string `json:"CONFIG_PATH" default:"~/.config/openchain/guardian"`
+	ConfigPath string `json:"CONFIG_PATH" default:"~/.config/openchain/overseer"`
 }
 
 var chainParams = &chaincfg.MainNetParams

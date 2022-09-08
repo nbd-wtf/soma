@@ -1,4 +1,4 @@
-module github.com/fiatjaf/openchain/guardian
+module github.com/fiatjaf/openchain/overseer
 
 go 1.18
 

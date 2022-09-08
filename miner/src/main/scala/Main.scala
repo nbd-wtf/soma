@@ -18,7 +18,7 @@ object Main {
   val logger = new nlog.Logger()
 
   private var rpcAddr: String = ""
-  private var guardianURL: String = ""
+  private var overseerURL: String = ""
   private var nextId = 0
 
   def main(args: Array[String]): Unit = {
@@ -119,10 +119,10 @@ object Main {
             ),
             "options" -> ujson.Arr(
               ujson.Obj(
-                "name" -> "guardian-url",
+                "name" -> "overseer-url",
                 "type" -> "string",
                 "default" -> "http://localhost:10738",
-                "description" -> "URL of the openchain guardian."
+                "description" -> "URL of the openchain overseer."
               )
             ),
             "notifications" -> ujson.Arr(),
@@ -140,7 +140,7 @@ object Main {
 
         val lightningDir = params("configuration")("lightning-dir").str
         rpcAddr = lightningDir + "/" + params("configuration")("rpc-file").str
-        guardianURL = params("options")("guardian-url").str
+        overseerURL = params("options")("overseer-url").str
       }
       case "invoice_payment" => {
         val label = params("payment")("label").str
@@ -164,9 +164,9 @@ object Main {
   def publishBlock(blockHash: ByteVector, fee: Satoshi): Future[Tx] = {
     val finalPsbt = for {
       listfunds <- rpc("listfunds")
-      guardianResponse <- Request()
+      overseerResponse <- Request()
         .method(Method.GET)
-        .url(guardianURL)
+        .url(overseerURL)
         .future()
       listaddrs <- rpc("dev-listaddrs", ujson.Obj("bip32_max_index" -> 0))
     } yield {
@@ -175,7 +175,7 @@ object Main {
           utxo("status").str == "confirmed" &&
             utxo("reserved").bool == false
         )
-      val nextPsbt = guardianResponse
+      val nextPsbt = overseerResponse
         .pipe(_.body)
         .pipe(ujson.read(_))
         .pipe(_("next")("psbt").str)
