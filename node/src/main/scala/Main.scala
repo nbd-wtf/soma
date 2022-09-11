@@ -11,6 +11,7 @@ object Main {
     Database.init()
     BitcoinManager.start()
     PeerManager.start()
+    StateManager.start()
     HttpServer.start()
   }
 }
@@ -71,7 +72,8 @@ object PeerManager {
                 .toByteVector
                 .toUint8Array
             )
-          case AnswerBlock(hash, Some(block)) =>
+          case AnswerBlock(hash, Some(block))
+              if block.validate() && block.header.hash == hash =>
             Database.insertBlock(hash, block)
         }
       }
@@ -164,4 +166,35 @@ object BitcoinManager {
             }
         }
       }
+}
+
+object StateManager {
+  def start(): Unit = {
+    val (bmmHeight, bmmHash) = Database.getCurrentTip()
+    processBlocksFrom(bmmHeight, bmmHash)
+  }
+
+  def processBlocksFrom(bmmHeight: Int, bmmHash: ByteVector): Unit = {
+    Database.getBlockAtBmmHeight(bmmHeight + 1) match {
+      case Some(block) if (block.header.previous == bmmHash) => {
+        // process this
+        Database.processBlock(block)
+
+        // ask for the next
+        processBlocksFrom(bmmHeight + 1, block.hash)
+      }
+      // case TODO block's previous is a different hash than the current, i.e. we have a chain split
+      case _ =>
+        // check if we have other txs after this one
+        if (Database.getLatestTx().isEmpty) {
+          // stop here and try again later
+          js.timers.setTimeout(60000) {
+            processBlocksFrom(bmmHeight, bmmHash)
+          }
+        } else {
+          // go to the next
+          processBlocksFrom(bmmHeight + 1, bmmHash)
+        }
+    }
+  }
 }

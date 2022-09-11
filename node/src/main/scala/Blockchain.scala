@@ -8,6 +8,10 @@ import Picklers.given
 
 case class Block(header: BlockHeader, txs: List[Tx]) {
   def hash: ByteVector = header.hash
+
+  def validate(): Boolean =
+    Tx.validateTxs(txs.toSet) &&
+      header.merkleRoot == Tx.merkleRoot(txs)
 }
 
 object Block {
@@ -17,13 +21,18 @@ object Block {
 
   given ReadWriter[Block] = macroRW
 
-  def makeBlock(txs: List[Tx]): Either[String, Block] =
-    if (txs.exists(_.validate() == false))
-      Left("the transactions must be valid")
+  def makeBlock(
+      txs: Seq[Tx],
+      parent: Option[ByteVector] = None
+  ): Either[String, Block] =
+    if (Tx.validateTxs(txs.toSet)) Left("one or more transactions are invalid")
     else {
-      val previous = Database
-        .getLatestKnownBlock()
-        .map(block => block.header.previous)
+      val previous = parent
+        .orElse(
+          Database
+            .getLatestKnownBlock()
+            .map { case (_, block) => block.header.previous }
+        )
         .getOrElse(ByteVector.fill(0)(32)) // default to 32 zeroes
       val block = Block(
         header = BlockHeader(previous, Tx.merkleRoot(txs)),
@@ -119,10 +128,10 @@ object Tx {
     counter = Database.getNextCounter(asset)
   ).withSignature(privateKey)
 
-  def merkleRoot(txs: List[Tx]): ByteVector =
+  def merkleRoot(txs: Seq[Tx]): ByteVector =
     txs.map(_.hash).pipe(merkle(_))
 
-  def merkle(hashes: List[ByteVector]): ByteVector =
+  def merkle(hashes: Seq[ByteVector]): ByteVector =
     hashes
       .grouped(2)
       .map(_.toList match {
@@ -134,9 +143,20 @@ object Tx {
           )
       })
       .pipe(hashes => merkle(hashes.toList))
+
+  def validateTxs(txs: Set[Tx]): Boolean =
+    txs.exists(thisTx =>
+      thisTx.validate(txs.filterNot(_ == thisTx).toSet) == false
+    )
 }
 
 object Picklers {
   given ReadWriter[ByteVector] =
     readwriter[String].bimap[ByteVector](_.toHex, ByteVector.fromValidHex(_))
+
+  given ReadWriter[Tx] =
+    readwriter[ujson.Value].bimap[Tx](
+      tx => writeJs(tx).obj.addOne("id" -> tx.hash.toHex),
+      json => read(json)
+    )
 }

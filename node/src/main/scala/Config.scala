@@ -30,6 +30,8 @@ object Config {
     val encoded = ByteVector(a.getBytes()).toBase64
     s"Basic $encoded"
   }
+
+  def port: Int = process.env.PORT.map(_.toInt).getOrElse(9036)
 }
 
 @js.native
@@ -47,6 +49,7 @@ trait Env extends js.Object {
   val BITCOIND_PORT: js.UndefOr[String] = js.native
   val BITCOIND_USER: String = js.native
   val BITCOIND_PASSWORD: String = js.native
+  var PORT: js.UndefOr[String] = js.native
 }
 
 @js.native

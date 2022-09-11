@@ -1,60 +1,125 @@
+import util.chaining.scalaUtilChainingOps
 import scala.scalajs.js
 import scala.scalajs.js.annotation.JSImport
 import scodec.bits.ByteVector
 import scodec.DecodeResult
 import upickle.default._
+import scala.scalajs.js.typedarray.Uint8Array
 
 object HttpServer {
   def start(): Unit = {
-    http.createServer(handleRequest).listen(9036)
+    http.createServer(handleRequest).listen(Config.port)
   }
 
   def handleRequest(req: Request, res: Response): Unit = {
     var id: ujson.Value = ujson.Null
     var body = ""
-    req.on("data", (chunk: String) => body += chunk)
+    req.on(
+      "data",
+      (chunk: Uint8Array) =>
+        body += ByteVector.fromUint8Array(chunk).decodeUtf8.toOption.get
+    )
     req.on(
       "end",
       (_: Unit) =>
         try {
-          val data = ujson.read(body)
-          id = data("id")
+          val data = ujson.read(body).obj
+          id = data.getOrElse("id", "0")
 
-          val method = data("method").str
-          val params = data("params").obj
+          val method = data.get("method").get.str
+          val params = data.get("params").getOrElse(ujson.Obj())
 
           val result: ujson.Value = method match {
             case "info" =>
               ujson.Obj(
-                "latestKnownBlock" -> Database
+                "latest_known_block" -> Database
                   .getLatestKnownBlock()
-                  .map(block => ujson.read(write(block)))
+                  .map { case (bmmheight, block) =>
+                    ujson.Obj(
+                      "height" -> bmmheight,
+                      "hash" -> block.hash.toHex
+                    )
+                  }
                   .getOrElse(ujson.Null),
-                "latestBMMTx" -> Database
+                "latest_bmm_tx" -> Database
                   .getLatestTx()
-                  .map[ujson.Value](_._1)
+                  .map { case (blockheight, txid, bmmheight, bmmhash) =>
+                    ujson.Obj(
+                      "blockheight" -> blockheight,
+                      "txid" -> txid,
+                      "bmmheight" -> bmmheight,
+                      "bmmhash" -> bmmhash
+                        .map[ujson.Value](_.toHex)
+                        .getOrElse(ujson.Null)
+                    )
+                  }
                   .getOrElse(ujson.Null)
               )
-
+            case "getbmmsince" =>
+              Database
+                .getBmmTxsSince(params("bmmheight").num.toInt)
+                .map { case (txid, bmmheight, bmmhash) =>
+                  ujson.Obj(
+                    "txid" -> txid,
+                    "bmmheight" -> bmmheight,
+                    "bmmhash" -> bmmhash
+                      .map[ujson.Value](_.toHex)
+                      .getOrElse(ujson.Null)
+                  )
+                }
+                .pipe(ujson.Arr(_))
             case "getblock" =>
               Database
                 .getBlock(ByteVector.fromValidHex(params("hash").str))
                 .map(block => ujson.read(write(block)))
                 .getOrElse(ujson.Null)
+            case "getassetowner" =>
+              Database
+                .getAssetOwner(ByteVector.fromValidHex(params("asset").str))
+                .map[ujson.Value](_.toHex)
+                .getOrElse(ujson.Null)
+            case "getaccountassets" =>
+              Database
+                .getAccountAssets(ByteVector.fromValidHex(params("pubkey").str))
+                .map(_.toHex)
 
-            // to be used by the user
+            // to be called by the user
             case "buildtx" =>
               val asset = ByteVector.fromValidHex(params("asset").str)
               val to = ByteVector.fromValidHex(params("to").str)
               val privateKey = ByteVector.fromValidHex(params("privateKey").str)
-              write(Tx.build(asset, to, privateKey))
+              ujson.Obj(
+                "hex" -> Tx.codec
+                  .encode(Tx.build(asset, to, privateKey))
+                  .require
+                  .toHex
+              )
 
-            // to be used by the miner
+            // to be called by the miner
             case "validatetx" =>
-              ujson.Obj("ok" -> read[Tx](params("tx")).validate())
+              ujson.Obj(
+                "ok" -> ByteVector
+                  .fromHex(params("tx").str)
+                  .map(_.toBitVector)
+                  .flatMap(Tx.codec.decode(_).toOption)
+                  .map(_.value.validate())
+                  .getOrElse(false)
+              )
 
             case "makeblock" =>
-              Block.makeBlock(read[List[Tx]](params("txs"))) match {
+              Block.makeBlock(
+                params("txs").arr.toList
+                  .map(_.str)
+                  .map(
+                    ByteVector
+                      .fromValidHex(_)
+                      .toBitVector
+                      .pipe(Tx.codec.decode(_).require.value)
+                  ),
+                params.obj
+                  .get("parent")
+                  .map(p => ByteVector.fromValidHex(p.str))
+              ) match {
                 case Left(err) => throw new Exception(err)
                 case Right(block) =>
                   ujson.Obj(
