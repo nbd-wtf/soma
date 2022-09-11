@@ -11,5 +11,6 @@ libraryDependencies   ++= Seq(
   "com.fiatjaf" %%% "nlog" % "0.1.0",
   "com.fiatjaf" %%% "sn-unixsocket" % "0.1.0",
   "com.github.lolgab" %%% "httpclient" % "0.0.1",
+  "com.github.lolgab" %%% "native-loop-core" % "0.2.1",
 )
 nativeLinkStubs := true

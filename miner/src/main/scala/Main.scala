@@ -1,24 +1,21 @@
 import java.io.ByteArrayInputStream
+import util.chaining._
 import scala.util.{Try, Success, Failure}
+import scala.annotation.nowarn
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
-import scala.util.ChainingOps
-import util.chaining.scalaUtilChainingOps
 import scala.scalanative.loop.EventLoop.loop
 import scala.scalanative.loop.{Poll, Timer}
-import com.github.lolgab.httpclient.{Request, Method}
 import scodec.bits.ByteVector
 import ujson._
 import scoin._
 import unixsocket.UnixSocket
-
-case class Tx(id: String, hex: String)
+import upack.Obj.apply
 
 object Main {
   val logger = new nlog.Logger()
 
   private var rpcAddr: String = ""
-  private var overseerURL: String = ""
   private var nextId = 0
 
   def main(args: Array[String]): Unit = {
@@ -32,7 +29,7 @@ object Main {
 
   def rpc(
       method: String,
-      params: ujson.Obj = ujson.Obj()
+      params: ujson.Obj | ujson.Arr = ujson.Obj()
   ): Future[ujson.Value] = {
     if (rpcAddr == "") {
       return Future.failed(Exception("rpc address is not known yet"))
@@ -89,6 +86,7 @@ object Main {
     )
   }
 
+  @nowarn
   def handleRPC(line: String): Unit = {
     val req = ujson.read(line)
     val params = req("params")
@@ -101,20 +99,19 @@ object Main {
           ujson.Obj(
             "dynamic" -> true,
             "options" -> ujson.Arr(),
-            "subscriptions" -> ujson.Arr(
-              "sendpay_success",
-              "sendpay_failure",
-              "connect",
-              "disconnect"
-            ),
             "hooks" -> ujson.Arr(
               ujson.Obj("name" -> "invoice_payment")
             ),
             "rpcmethods" -> ujson.Arr(
               ujson.Obj(
-                "name" -> "publish",
-                "usage" -> "hash fee",
-                "description" -> "something"
+                "name" -> "openchain-status",
+                "usage" -> "",
+                "description" -> "returns a bunch of data -- this is supposed to be called by the public through commando"
+              ),
+              ujson.Obj(
+                "name" -> "openchain-invoice",
+                "usage" -> "tx msatoshi",
+                "description" -> "takes the transaction you want to publish plus how much in fees you intend to contribute -- this is supposed to be called by the public through commando"
               )
             ),
             "options" -> ujson.Arr(
@@ -123,9 +120,15 @@ object Main {
                 "type" -> "string",
                 "default" -> "http://localhost:10738",
                 "description" -> "URL of the openchain overseer."
+              ),
+              ujson.Obj(
+                "name" -> "node-url",
+                "type" -> "string",
+                "default" -> "http://127.0.0.1:9036",
+                "description" -> "URL of the openchain node."
               )
             ),
-            "notifications" -> ujson.Arr(),
+            "notifications" -> ujson.Arr("block_processed"),
             "featurebits" -> ujson.Obj()
           )
         )
@@ -140,115 +143,50 @@ object Main {
 
         val lightningDir = params("configuration")("lightning-dir").str
         rpcAddr = lightningDir + "/" + params("configuration")("rpc-file").str
-        overseerURL = params("options")("overseer-url").str
+        Node.nodeUrl = params("options")("node-url").str
+        Publish.overseerURL = params("options")("overseer-url").str
+      }
+      case "block_processed" => {
+        val height = params("block_processed")("height").num.toInt
+        logger.debug.item("height", height).msg("a block has arrived")
+        Manager.onBlock(height)
       }
       case "invoice_payment" => {
         val label = params("payment")("label").str
-        logger.debug.item("label", label).msg("invoice payment received")
-        reply(ujson.Obj("result" -> "continue"))
-      }
-      case "publish" => {
-        val hash = ByteVector.fromValidHex(params(0).str)
-        val fee = Satoshi(params(1).num.toLong)
-
-        publishBlock(hash, fee)
-          .onComplete {
-            case Success(Tx(id, hex)) =>
-              reply(ujson.Obj("txid" -> id, "tx" -> hex))
-            case Failure(err) => replyError(s"$err")
+        if (label.startsWith("miner:")) {
+          logger.debug.item("label", label).msg("invoice payment arrived")
+          Manager.onPayment(label).onComplete {
+            case Success(true) =>
+              reply(ujson.Obj("result" -> "continue"))
+            case Success(false) =>
+              reply(ujson.Obj("result" -> "reject"))
+            case Failure(_) =>
+              reply(ujson.Obj("result" -> "reject"))
           }
+        } else reply(ujson.Obj("result" -> "continue"))
       }
-    }
-  }
-
-  def publishBlock(blockHash: ByteVector, fee: Satoshi): Future[Tx] = {
-    val finalPsbt = for {
-      listfunds <- rpc("listfunds")
-      overseerResponse <- Request()
-        .method(Method.GET)
-        .url(overseerURL)
-        .future()
-      listaddrs <- rpc("dev-listaddrs", ujson.Obj("bip32_max_index" -> 0))
-    } yield {
-      val outputs = listfunds("outputs").arr
-        .filter(utxo =>
-          utxo("status").str == "confirmed" &&
-            utxo("reserved").bool == false
-        )
-      val nextPsbt = overseerResponse
-        .pipe(_.body)
-        .pipe(ujson.read(_))
-        .pipe(_("next")("psbt").str)
-        .pipe(Psbt.fromBase64(_))
-        .get
-      val ourScriptPubKey = listaddrs
-        .pipe(_("addresses")(0)("pubkey").str)
-        .pipe(ByteVector.fromValidHex(_))
-        .pipe(Crypto.hash160(_))
-        .pipe(pubkeyhash =>
-          ByteVector.concat(
-            List(ByteVector.fromByte(0), ByteVector.fromByte(20), pubkeyhash)
+      case "openchain-status" =>
+        reply(
+          ujson.Obj(
+            "pending_txs" -> Manager.pendingTransactions.size,
+            "acc_fees" -> Manager.totalFees.toLong
           )
         )
+      case "openchain-invoice" =>
+        val (tx, amount) = (params match {
+          case o: Obj => (o("tx").str, o("msatoshi").num)
+          case a: Arr => (a(0).str, a(1).num)
+        }).pipe(v => (ByteVector.fromValidHex(v._1), MilliSatoshi(v._2.toLong)))
 
-      val inputSum = outputs
-        .map(utxo => MilliSatoshi(utxo("amount_msat").num.toLong).toSatoshi)
-        .fold(Satoshi(0))(_ + _)
-
-      if (inputSum < fee)
-        throw new Exception(
-          s"not enough unreserved and confirmed outputs to pay fee of $fee"
-        )
-
-      Psbt(
-        nextPsbt.global.tx
-          .copy(
-            txIn = List(
-              nextPsbt.global.tx.txIn(0)
-            ) ++
-              // add our inputs
-              outputs
-                .map(utxo =>
-                  TxIn(
-                    outPoint = OutPoint(
-                      ByteVector32(
-                        ByteVector
-                          .fromValidHex(utxo("txid").str)
-                          .reverse
-                      ),
-                      utxo("output").num.toInt
-                    ),
-                    sequence = 0,
-                    signatureScript = ByteVector.empty
-                  )
-                ),
-            txOut = List(
-              // the canonical output
-              nextPsbt.global.tx.txOut(0),
-
-              // add our OP_RETURN
-              TxOut(
-                Satoshi(0L),
-                Script.write(List(OP_RETURN, OP_PUSHDATA(blockHash)))
-              ),
-
-              // add our change
-              TxOut(inputSum - fee, ourScriptPubKey)
+        Manager.addNewTransaction(tx, amount).onComplete {
+          case Success(bolt11) =>
+            reply(
+              ujson.Obj(
+                "invoice" -> bolt11
+              )
             )
-          )
-      )
-        .pipe(interm =>
-          interm.copy(inputs = nextPsbt.inputs(0) +: interm.inputs.drop(1))
-        )
-        .pipe(Psbt.toBase64(_))
+          case Failure(err) => replyError(err.toString)
+        }
     }
-
-    for {
-      psbt <- finalPsbt
-      _ <- rpc("reserveinputs", ujson.Obj("psbt" -> psbt))
-      signedPsbt <- rpc("signpsbt", ujson.Obj("psbt" -> psbt))
-        .map(_("signed_psbt").str)
-      res <- rpc("sendpsbt", ujson.Obj("psbt" -> signedPsbt))
-    } yield Tx(res("txid").str, res("tx").str)
   }
 }
