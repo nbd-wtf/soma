@@ -5,6 +5,7 @@ import scodec.bits.ByteVector
 import scodec.DecodeResult
 import upickle.default._
 import scala.scalajs.js.typedarray.Uint8Array
+import scoin.{Crypto, ByteVector32}
 
 object HttpServer {
   def start(): Unit = {
@@ -43,9 +44,8 @@ object HttpServer {
                   .getOrElse(ujson.Null),
                 "latest_bmm_tx" -> Database
                   .getLatestTx()
-                  .map { case (blockheight, txid, bmmheight, bmmhash) =>
+                  .map { case (txid, bmmheight, bmmhash) =>
                     ujson.Obj(
-                      "blockheight" -> blockheight,
                       "txid" -> txid,
                       "bmmheight" -> bmmheight,
                       "bmmhash" -> bmmhash
@@ -75,19 +75,32 @@ object HttpServer {
                 .getOrElse(ujson.Null)
             case "getassetowner" =>
               Database
-                .getAssetOwner(ByteVector.fromValidHex(params("asset").str))
+                .getAssetOwner(
+                  ByteVector32(ByteVector.fromValidHex(params("asset").str))
+                )
                 .map[ujson.Value](_.toHex)
                 .getOrElse(ujson.Null)
             case "getaccountassets" =>
               Database
-                .getAccountAssets(ByteVector.fromValidHex(params("pubkey").str))
+                .getAccountAssets(
+                  Crypto.XOnlyPublicKey(
+                    ByteVector32(
+                      ByteVector.fromValidHex(params("pubkey").str)
+                    )
+                  )
+                )
                 .map(_.toHex)
 
             // to be called by the user
             case "buildtx" =>
-              val asset = ByteVector.fromValidHex(params("asset").str)
-              val to = ByteVector.fromValidHex(params("to").str)
-              val privateKey = ByteVector.fromValidHex(params("privateKey").str)
+              val asset =
+                ByteVector32(ByteVector.fromValidHex(params("asset").str))
+              val to = Crypto.XOnlyPublicKey(
+                ByteVector32(ByteVector.fromValidHex(params("to").str))
+              )
+              val privateKey = Crypto.PrivateKey(
+                ByteVector32(ByteVector.fromValidHex(params("privateKey").str))
+              )
               ujson.Obj(
                 "hex" -> Tx.codec
                   .encode(Tx.build(asset, to, privateKey))
@@ -118,7 +131,7 @@ object HttpServer {
                   ),
                 params.obj
                   .get("parent")
-                  .map(p => ByteVector.fromValidHex(p.str))
+                  .map(p => ByteVector32(ByteVector.fromValidHex(p.str)))
               ) match {
                 case Left(err) => throw new Exception(err)
                 case Right(block) =>
@@ -142,6 +155,9 @@ object HttpServer {
           res.end(ujson.write(ujson.Obj("id" -> id, "result" -> result)))
         } catch {
           case err: Throwable =>
+            System.err.println(
+              err.getStackTrace().take(4).map(_.toString()).mkString("\n")
+            )
             res.end(ujson.write(ujson.Obj("id" -> id, "error" -> err.toString)))
         }
     )

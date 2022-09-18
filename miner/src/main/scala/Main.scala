@@ -1,5 +1,7 @@
 import java.io.ByteArrayInputStream
-import util.chaining._
+import java.nio.charset.StandardCharsets
+import scala.util.chaining._
+import scala.util.control.Breaks._
 import scala.util.{Try, Success, Failure}
 import scala.annotation.nowarn
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -19,10 +21,30 @@ object Main {
   private var nextId = 0
 
   def main(args: Array[String]): Unit = {
-    Poll(0).startReadWrite { _ =>
-      val line = scala.io.StdIn.readLine().trim
-      if (line.size > 0) {
-        handleRPC(line)
+    Poll(0).startRead { v =>
+      var current = Array.empty[Byte]
+
+      breakable {
+        while (true) {
+          // read stdin char-by-char
+          Try(scala.Console.in.read()) match {
+            case Success(char) if char == -1 =>
+              // this will happen when stdin is closed, i.e. lightningd
+              //   is not alive anymore so we should shutdown too
+              scala.sys.exit(72)
+            case Success(char) if char == 10 =>
+              // newline, we've got a full line, so handle it
+              val line = new String(current, StandardCharsets.UTF_8).trim()
+              if (line.size > 0) handleRPC(line)
+              current = Array.empty
+            case Success(char) =>
+              // normal char, add it to the current
+              current = current :+ char.toByte
+            case Failure(err) =>
+              // EOF, stop reading and wait for the next libuv callback
+              break()
+          }
+        }
       }
     }
   }
@@ -65,20 +87,21 @@ object Main {
       ujson.write(
         ujson.Obj(
           "jsonrpc" -> "2.0",
-          "id" -> req("id").num,
+          "id" -> req("id"),
           "result" -> result
         )
       )
     )
   }
 
-  def answer(req: ujson.Value)(errorMessage: String): Unit = {
+  def answer(req: ujson.Value)(errorCode: Int, errorMessage: String): Unit = {
     System.out.println(
       ujson.write(
         ujson.Obj(
           "jsonrpc" -> "2.0",
-          "id" -> req("id").num,
+          "id" -> req("id"),
           "error" -> ujson.Obj(
+            "code" -> errorCode,
             "message" -> errorMessage
           )
         )
@@ -91,7 +114,7 @@ object Main {
     val req = ujson.read(line)
     val params = req("params")
     def reply(result: ujson.Value) = answer(req)(result)
-    def replyError(err: String) = answer(req)(err)
+    def replyError(code: Int, err: String) = answer(req)(code, err)
 
     req("method").str match {
       case "getmanifest" =>
@@ -128,26 +151,21 @@ object Main {
                 "description" -> "URL of the openchain node."
               )
             ),
-            "notifications" -> ujson.Arr("block_processed"),
+            "subscriptions" -> ujson.Arr("block_added"),
+            "notifications" -> ujson.Arr(),
             "featurebits" -> ujson.Obj()
           )
         )
       case "init" => {
-        reply(
-          ujson.Obj(
-            "jsonrpc" -> "2.0",
-            "id" -> req("id").num,
-            "result" -> ujson.Obj()
-          )
-        )
+        reply(ujson.Obj())
 
         val lightningDir = params("configuration")("lightning-dir").str
         rpcAddr = lightningDir + "/" + params("configuration")("rpc-file").str
         Node.nodeUrl = params("options")("node-url").str
         Publish.overseerURL = params("options")("overseer-url").str
       }
-      case "block_processed" => {
-        val height = params("block_processed")("height").num.toInt
+      case "block_added" => {
+        val height = params("block")("height").num.toInt
         logger.debug.item("height", height).msg("a block has arrived")
         Manager.onBlock(height)
       }
@@ -155,12 +173,20 @@ object Main {
         val label = params("payment")("label").str
         if (label.startsWith("miner:")) {
           logger.debug.item("label", label).msg("invoice payment arrived")
-          Manager.onPayment(label).onComplete {
+          Manager.acceptPayment(label).onComplete {
             case Success(true) =>
+              logger.debug
+                .item("label", label)
+                .msg("we couldn't include the transaction")
               reply(ujson.Obj("result" -> "continue"))
             case Success(false) =>
+              System.err
+              logger.debug
+                .item("label", label)
+                .msg("we couldn't include the transaction")
               reply(ujson.Obj("result" -> "reject"))
-            case Failure(_) =>
+            case Failure(err) =>
+              logger.err.item(err).msg("rejecting payment because of a failure")
               reply(ujson.Obj("result" -> "reject"))
           }
         } else reply(ujson.Obj("result" -> "continue"))
@@ -173,19 +199,31 @@ object Main {
           )
         )
       case "openchain-invoice" =>
-        val (tx, amount) = (params match {
-          case o: Obj => (o("tx").str, o("msatoshi").num)
-          case a: Arr => (a(0).str, a(1).num)
-        }).pipe(v => (ByteVector.fromValidHex(v._1), MilliSatoshi(v._2.toLong)))
-
-        Manager.addNewTransaction(tx, amount).onComplete {
-          case Success(bolt11) =>
-            reply(
-              ujson.Obj(
-                "invoice" -> bolt11
-              )
+        try {
+          val (tx, amount) = (params match {
+            case o: Obj => (o("tx").str, o("msatoshi").num)
+            case a: Arr => (a(0).str, a(1).num)
+          }).pipe(v =>
+            (
+              ByteVector.fromValidHex(v._1),
+              MilliSatoshi(v._2.toLong)
             )
-          case Failure(err) => replyError(err.toString)
+          )
+
+          Manager.addNewTransaction(tx, amount).onComplete {
+            case Success(bolt11) =>
+              reply(
+                ujson.Obj(
+                  "invoice" -> bolt11
+                )
+              )
+            case Failure(err) =>
+              replyError(1, err.toString)
+          }
+        } catch {
+          case err: java.util.NoSuchElementException =>
+            replyError(400, "wrong params")
+          case err: Throwable => replyError(500, s"something went wrong: $err")
         }
     }
   }

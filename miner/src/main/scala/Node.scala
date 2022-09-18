@@ -1,60 +1,53 @@
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.util.Failure
 import scodec.bits.ByteVector
 import com.github.lolgab.httpclient.{Request, Method}
 import ujson._
 import scoin._
 
 object Node {
+  import Main.logger
+
   var nodeUrl: String = ""
 
-  def getNextBlock(txs: Seq[ByteVector]): Future[ByteVector] =
+  private def call(
+      method: String,
+      params: ujson.Obj = ujson.Obj()
+  ): Future[ujson.Value] =
     Request()
       .method(Method.POST)
       .url(nodeUrl)
       .body(
-        ujson.write(
-          ujson.Obj(
-            "method" -> "makeblock",
-            "params" -> ujson.Obj(
-              "txs" -> ujson.Arr(txs.map(_.toHex))
-            )
-          )
-        )
+        ujson.write(ujson.Obj("method" -> method, "params" -> params))
       )
       .future()
-      .map(r => ujson.read(r.body)("result")("hex").str)
+      .andThen { case Failure(err) =>
+        logger.err
+          .item(err)
+          .item("method", method)
+          .item("params", params)
+          .msg("failed to contact node")
+        scala.sys.exit(1)
+      }
+      .map(r => ujson.read(r.body)("result"))
+
+  def getNextBlock(txs: Seq[ByteVector]): Future[ByteVector] =
+    call(
+      "makeblock",
+      ujson.Obj(
+        "txs" -> txs.map(_.toHex)
+      )
+    )
+      .map(_("hex").str)
       .map(ByteVector.fromValidHex(_))
 
   def validateTx(tx: ByteVector): Future[Boolean] =
-    Request()
-      .method(Method.POST)
-      .url(nodeUrl)
-      .body(
-        ujson.write(
-          ujson.Obj(
-            "method" -> "validatetx",
-            "params" -> ujson.Obj("tx" -> tx.toHex)
-          )
-        )
-      )
-      .future()
-      .map(r => ujson.read(r.body)("result")("ok").bool)
+    call("validatetx", ujson.Obj("tx" -> tx.toHex))
+      .map(_("ok").bool)
 
   def getBmmSince(bmmHeight: Int): Future[List[Bmm]] =
-    Request()
-      .method(Method.POST)
-      .url(nodeUrl)
-      .body(
-        ujson.write(
-          ujson.Obj(
-            "method" -> "getbmmsince",
-            "params" -> ujson.Obj("bmmheight" -> bmmHeight)
-          )
-        )
-      )
-      .future()
-      .map(r => ujson.read(r.body)("result"))
+    call("getbmmsince", ujson.Obj("bmmheight" -> bmmHeight))
       .map(r =>
         r.arr.toList.map(bmm =>
           Bmm(
@@ -67,34 +60,10 @@ object Node {
       )
 
   def getBlock(bmmHash: ByteVector32): Future[Option[ujson.Obj]] =
-    Request()
-      .method(Method.POST)
-      .url(nodeUrl)
-      .body(
-        ujson.write(
-          ujson.Obj(
-            "method" -> "getblock",
-            "params" -> ujson.Obj("hash" -> bmmHash.toHex)
-          )
-        )
-      )
-      .future()
-      .map(r => ujson.read(r.body)("result"))
+    call("getblock", ujson.Obj("hash" -> bmmHash.toHex))
       .map(r => r.objOpt.map(ujson.Obj(_)))
 
   def registerBlock(block: ByteVector): Future[Unit] =
-    Request()
-      .method(Method.POST)
-      .url(nodeUrl)
-      .body(
-        ujson.write(
-          ujson.Obj(
-            "method" -> "registerblock",
-            "params" -> ujson.Obj("hex" -> block.toHex)
-          )
-        )
-      )
-      .future()
-      .map(r => ujson.read(r.body)("result"))
+    call("registerblock", ujson.Obj("hex" -> block.toHex))
       .map(r => r.objOpt.map(ujson.Obj(_)))
 }

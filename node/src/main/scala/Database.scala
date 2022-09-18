@@ -5,6 +5,7 @@ import scala.scalajs.js
 import scala.scalajs.js.annotation.JSImport
 import scala.scalajs.js.typedarray.Uint8Array
 import scodec.bits.ByteVector
+import scoin.{Crypto, ByteVector32, ByteVector64}
 
 object Database {
   private var db: Database = _
@@ -23,40 +24,42 @@ object Database {
   }
 
   private lazy val getLatestTxStmt = db.prepare(
-    "SELECT blockheight, txid, bmmheight, bmmhash FROM blocks ORDER BY bmmheight DESC LIMIT 1"
+    "SELECT txid, bmmheight, bmmhash FROM blocks ORDER BY bmmheight DESC LIMIT 1"
   )
-  def getLatestTx(): Option[(Int, String, Int, Option[ByteVector])] =
+  def getLatestTx(): Option[(String, Int, Option[ByteVector32])] =
     getLatestTxStmt
       .get()
       .toOption
       .map(row =>
         (
-          row.selectDynamic("blockheight").asInstanceOf[Double].toInt,
           row.selectDynamic("txid").asInstanceOf[String],
           row.selectDynamic("bmmheight").asInstanceOf[Double].toInt,
           row
             .selectDynamic("bmmhash")
-            .asInstanceOf[js.UndefOr[Uint8Array]]
-            .toOption
-            .map(ByteVector.fromUint8Array(_))
+            .asInstanceOf[Uint8Array]
+            .pipe(v => if v == null then None else Some(v))
+            .map(ByteVector.fromUint8Array(_).pipe(ByteVector32(_)))
         )
       )
 
   private lazy val getMissingBlocksStmt = db.prepare(
     "SELECT bmmhash FROM blocks WHERE bmmhash IS NOT NULL AND block IS NULL"
   )
-  def getMissingBlocks(): List[ByteVector] = getMissingBlocksStmt
+  def getMissingBlocks(): List[ByteVector32] = getMissingBlocksStmt
     .all()
     .toList
     .map(row =>
       ByteVector
         .fromUint8Array(row.selectDynamic("bmmhash").asInstanceOf[Uint8Array])
+        .pipe(ByteVector32(_))
     )
 
   private lazy val getBmmTxsSinceStmt = db.prepare(
     "SELECT txid, bmmheight, bmmhash FROM blocks WHERE bmmheight > ? ORDER BY bmmheight"
   )
-  def getBmmTxsSince(bmmheight: Int): List[(String, Int, Option[ByteVector])] =
+  def getBmmTxsSince(
+      bmmheight: Int
+  ): List[(String, Int, Option[ByteVector32])] =
     getBmmTxsSinceStmt
       .all(bmmheight)
       .toList
@@ -66,9 +69,13 @@ object Database {
           row.selectDynamic("bmmheight").asInstanceOf[Double].toInt,
           row
             .selectDynamic("bmmhash")
-            .asInstanceOf[js.UndefOr[Uint8Array]]
-            .toOption
-            .map(ByteVector.fromUint8Array(_))
+            .asInstanceOf[Uint8Array]
+            .pipe(v => if v == null then None else Some(v))
+            .map(
+              ByteVector
+                .fromUint8Array(_)
+                .pipe(ByteVector32(_))
+            )
         )
       }
 
@@ -79,7 +86,7 @@ object Database {
   def addTx(
       bmmHeight: Int,
       txid: String,
-      bmmHash: Option[ByteVector]
+      bmmHash: Option[ByteVector32]
   ): Unit =
     addTxStmt.run(
       bmmHeight,
@@ -107,8 +114,8 @@ object Database {
       .flatMap(row =>
         row
           .selectDynamic("block")
-          .asInstanceOf[js.UndefOr[Uint8Array]]
-          .toOption
+          .asInstanceOf[Uint8Array]
+          .pipe(v => if v == null then None else Some(v))
           .flatMap(uint8arr =>
             Block.codec
               .decode(
@@ -125,7 +132,7 @@ object Database {
     db.prepare(
       "UPDATE blocks SET block = ?, blockheight = ? WHERE bmmhash = ? AND block IS NULL"
     )
-  def insertBlock(hash: ByteVector, block: Block) =
+  def insertBlock(hash: ByteVector32, block: Block) =
     Block.codec.encode(block).toOption.foreach { bs =>
       insertBlockStmt
         .run(
@@ -144,7 +151,7 @@ object Database {
 
   private lazy val getBlockHeightStmt =
     db.prepare("SELECT blockheight FROM blocks WHERE bmmhash = ?")
-  def getBlockHeight(hash: ByteVector): Option[Int] = getBlockHeightStmt
+  def getBlockHeight(hash: ByteVector32): Option[Int] = getBlockHeightStmt
     .get(hash)
     .toOption
     .map(_.selectDynamic("blockheight").asInstanceOf[Double].toInt)
@@ -170,8 +177,8 @@ object Database {
     "SELECT 1 FROM state WHERE asset = ? AND owner = ? AND counter = ?"
   )
   def verifyAssetOwnerAndCounter(
-      asset: ByteVector,
-      owner: ByteVector,
+      asset: ByteVector32,
+      owner: Crypto.XOnlyPublicKey,
       counter: Int
   ): Boolean =
     verifyAssetOwnerAndCounterStmt
@@ -181,7 +188,7 @@ object Database {
   private lazy val verifyAssetDoesntExistStmt = db.prepare(
     "SELECT 1 FROM state WHERE asset = ?"
   )
-  def verifyAssetDoesntExist(asset: ByteVector): Boolean =
+  def verifyAssetDoesntExist(asset: ByteVector32): Boolean =
     verifyAssetDoesntExistStmt
       .get(asset)
       .isEmpty
@@ -189,7 +196,7 @@ object Database {
   private lazy val getCurrentCounterStmt = db.prepare(
     "SELECT counter FROM state WHERE asset = ?"
   )
-  def getNextCounter(asset: ByteVector): Int =
+  def getNextCounter(asset: ByteVector32): Int =
     getCurrentCounterStmt
       .get(asset)
       .map(_.selectDynamic("counter").asInstanceOf[Int])
@@ -198,7 +205,7 @@ object Database {
   private lazy val getAccountAssetsStmt = db.prepare(
     "SELECT asset FROM state WHERE owner = ?"
   )
-  def getAccountAssets(pubkey: ByteVector): List[ByteVector] =
+  def getAccountAssets(pubkey: Crypto.XOnlyPublicKey): List[ByteVector] =
     getAccountAssetsStmt
       .all(pubkey)
       .toList
@@ -210,15 +217,21 @@ object Database {
   private lazy val getAssetOwnerStmt = db.prepare(
     "SELECT owner FROM state WHERE asset = ?"
   )
-  def getAssetOwner(asset: ByteVector): Option[ByteVector] = getAssetOwnerStmt
-    .get()
-    .toOption
-    .map(_.selectDynamic("owner").asInstanceOf[Uint8Array])
-    .map(ByteVector.fromUint8Array(_))
+  def getAssetOwner(asset: ByteVector32): Option[Crypto.XOnlyPublicKey] =
+    getAssetOwnerStmt
+      .get()
+      .toOption
+      .map(_.selectDynamic("owner").asInstanceOf[Uint8Array])
+      .map(
+        ByteVector
+          .fromUint8Array(_)
+          .pipe(ByteVector32(_))
+          .pipe(Crypto.XOnlyPublicKey(_))
+      )
 
   private lazy val getCurrentTipStmt =
     db.prepare("SELECT bmmheight, bmmhash FROM current")
-  def getCurrentTip(): (Int, ByteVector) = getCurrentTipStmt
+  def getCurrentTip(): (Int, ByteVector32) = getCurrentTipStmt
     .get()
     .toOption
     .map(row =>
@@ -226,13 +239,11 @@ object Database {
         row.selectDynamic("bmmheight").asInstanceOf[Double].toInt,
         row
           .selectDynamic("bmmhash")
-          .asInstanceOf[js.UndefOr[Uint8Array]]
-          .toOption
-          .map(ByteVector.fromUint8Array(_))
-          .getOrElse(ByteVector.empty)
+          .asInstanceOf[Uint8Array]
+          .pipe(v => ByteVector32(ByteVector.fromUint8Array(v)))
       )
     )
-    .getOrElse((0, ByteVector.empty))
+    .getOrElse((0, ByteVector32.Zeroes))
 
   private lazy val updateCurrentTipStmt =
     db.prepare("UPDATE current SET bmmheight = bmmheight + 1, bmmhash = ?")
@@ -264,6 +275,12 @@ object SQLiteValue {
   implicit def fromUint8Array(x: Uint8Array): SQLiteValue =
     x.asInstanceOf[SQLiteValue]
   implicit def fromByteVector(x: ByteVector): SQLiteValue = x.toUint8Array
+  implicit def fromByteVector32(x: ByteVector32): SQLiteValue =
+    x.bytes.toUint8Array
+  implicit def fromByteVector64(x: ByteVector64): SQLiteValue =
+    x.bytes.toUint8Array
+  implicit def fromXOnlyPublicKey(x: Crypto.XOnlyPublicKey): SQLiteValue =
+    x.value.bytes
   implicit def fromNull(x: Null): SQLiteValue = x.asInstanceOf[SQLiteValue]
 }
 

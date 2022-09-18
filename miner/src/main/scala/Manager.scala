@@ -111,36 +111,49 @@ object Manager {
         }
       })
 
-  def onPayment(label: String): Future[Boolean] = {
-    // a payment has arrived, we will hold it
-    // as we try to publish a block containing it
+  def acceptPayment(label: String): Future[Boolean] = {
+    // a payment has arrived asking us to include a tx,
+    //   we will hold it as we try to publish a block
     val promise = Promise[Boolean]()
 
-    (for {
+    val operation = for {
       res <- rpc("listinvoices", ujson.Obj("label" -> label))
       fee = MilliSatoshi(res("invoices")(0)("msatoshi").num.toLong)
+
+      // parse the tx hex from the invoice description
       otx = res("invoices")(0)("description").str
         .dropWhile(_ != ':')
+        .drop(1)
         .pipe(ByteVector.fromValidHex(_))
+
+      // get id/hash for this transaction
       otxid = Crypto.sha256(otx.dropRight(32)).toHex
-      oblock <- Node.getNextBlock(
-        pendingTransactions.map(_._2._2).toList
-      )
+
       currentBitcoinBlock <- rpc("getchaininfo")
         .map(_("headercount").num.toLong)
         .map(BlockHeight(_))
-    } yield {
+
       // check if this same transaction was already here and cancel it
-      pendingTransactions.get(otxid).foreach { case (p, _, _, _) =>
+      _ = pendingTransactions.get(otxid).foreach { case (p, _, _, _) =>
         p.success(false)
       }
 
       // add this new one
-      pendingTransactions += (otxid -> (promise, otx, fee.truncateToSatoshi, currentBitcoinBlock + 104))
+      _ = {
+        pendingTransactions +=
+          (otxid -> (promise, otx, fee.truncateToSatoshi, currentBitcoinBlock + 104))
+      }
+
+      // get the block to publish containing all our pending txs from the node
+      oblock <- Node.getNextBlock(
+        pendingTransactions.map(_._2._2).toList
+      )
 
       // republish block bmm tx
-      Publish.publishBlock(oblock, totalFees)
-    }).onComplete {
+      _ = Publish.publishBlock(oblock, totalFees)
+    } yield ()
+
+    operation.onComplete {
       case Failure(err) => promise.failure(err)
       case Success(res) =>
     }
@@ -157,7 +170,7 @@ object Manager {
         "invoice",
         ujson.Obj(
           "amount_msat" -> amount.toMilliSatoshi.toLong,
-          "label" -> s"miner:${otxid}",
+          "label" -> s"miner:${otxid.take(6)}#${Crypto.randomBytes(3).toHex}",
           "description" -> s"publish the following transaction: ${otx.toHex}",
           "cltv" -> 144
         )

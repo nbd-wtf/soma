@@ -2,9 +2,11 @@ import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
 import util.chaining.scalaUtilChainingOps
 import scala.concurrent.Future
 import scala.scalajs.js
+import scala.scalajs.js.annotation.JSImport
 import scala.scalajs.js.typedarray.Uint8Array
 import scodec.bits.ByteVector
 import scodec.{Attempt, DecodeResult}
+import scoin.ByteVector32
 
 object Main {
   def main(args: Array[String]): Unit = {
@@ -14,6 +16,16 @@ object Main {
     StateManager.start()
     HttpServer.start()
   }
+
+  // ~
+  // do this so SecureRandom from scoin works on ESModule
+  @js.native
+  @JSImport("crypto", JSImport.Namespace)
+  val crypto: js.Dynamic = js.native
+  private val g = scalajs.js.Dynamic.global.globalThis
+  g.crypto = crypto
+  // until https://github.com/scala-js/scala-js-java-securerandom/issues/8 is fixed
+  // ~
 }
 
 object PeerManager {
@@ -75,6 +87,9 @@ object PeerManager {
           case AnswerBlock(hash, Some(block))
               if block.validate() && block.header.hash == hash =>
             Database.insertBlock(hash, block)
+
+          case AnswerBlock(hash, None) =>
+            println(s"got answer: no block known for ${hash.toHex}")
         }
       }
       case Attempt.Failure(err) => println(s"got unknown message $msg")
@@ -89,8 +104,8 @@ object PeerManager {
 object BitcoinManager {
   def start(): Unit = {
     // start scanning at the genesis tx if we don't have anything in the database
-    val (bmmHeight, txid) =
-      Database.getLatestTx().getOrElse((1, Config.genesisTx))
+    val (txid, bmmHeight, bmmHash) =
+      Database.getLatestTx().getOrElse((Config.genesisTx, 1, None))
 
     for {
       tipTx <- BitcoinRPC.call(
@@ -108,14 +123,14 @@ object BitcoinManager {
     }
   }
 
-  def getBmmHash(tx: ujson.Obj): Option[ByteVector] = {
+  def getBmmHash(tx: ujson.Obj): Option[ByteVector32] = {
     if (
       tx("vout").arr.size > 1 && tx("vout")(1)("scriptPubKey")("asm").str
         .startsWith("OP_RETURN")
     ) {
       val hex = tx("vout")(1)("scriptPubKey")("asm").str.split(" ")(1)
       val bmmHash = ByteVector.fromValidHex(hex)
-      if (bmmHash.size == 32) Some(bmmHash) else None
+      if (bmmHash.size == 32) Some(ByteVector32(bmmHash)) else None
     } else None
   }
 
@@ -174,7 +189,8 @@ object StateManager {
     processBlocksFrom(bmmHeight, bmmHash)
   }
 
-  def processBlocksFrom(bmmHeight: Int, bmmHash: ByteVector): Unit = {
+  def processBlocksFrom(bmmHeight: Int, bmmHash: ByteVector32): Unit = {
+    println(s"processing block at $bmmHeight")
     Database.getBlockAtBmmHeight(bmmHeight + 1) match {
       case Some(block) if (block.header.previous == bmmHash) => {
         // process this
@@ -183,17 +199,19 @@ object StateManager {
         // ask for the next
         processBlocksFrom(bmmHeight + 1, block.hash)
       }
-      // case TODO block's previous is a different hash than the current, i.e. we have a chain split
-      case _ =>
+      case Some(block) =>
+      // TODO block's previous is a different hash than the current, i.e. we have a chain split
+      case None =>
         // check if we have other txs after this one
-        if (Database.getLatestTx().isEmpty) {
-          // stop here and try again later
-          js.timers.setTimeout(60000) {
-            processBlocksFrom(bmmHeight, bmmHash)
-          }
-        } else {
-          // go to the next
-          processBlocksFrom(bmmHeight + 1, bmmHash)
+        Database.getLatestTx() match {
+          case Some(_, latestBmmHeight, _) if latestBmmHeight > bmmHeight =>
+            // we do! go to the next
+            processBlocksFrom(bmmHeight + 1, bmmHash)
+          case _ =>
+            // we don't, stop here and try again later
+            js.timers.setTimeout(60000) {
+              processBlocksFrom(bmmHeight, bmmHash)
+            }
         }
     }
   }
