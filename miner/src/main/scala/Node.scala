@@ -30,7 +30,11 @@ object Node {
           .msg("failed to contact node")
         scala.sys.exit(1)
       }
-      .map(r => ujson.read(r.body)("result"))
+      .map { r =>
+        val b = ujson.read(r.body).obj
+        if b.contains("result") then b("result")
+        else throw new Exception(b("error").toString)
+      }
 
   def getNextBlock(txs: Seq[ByteVector]): Future[ByteVector] =
     call(

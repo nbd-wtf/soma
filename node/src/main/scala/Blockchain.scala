@@ -131,17 +131,19 @@ object Tx {
     txs.map(_.hash).pipe(merkle(_))
 
   def merkle(hashes: Seq[ByteVector32]): ByteVector32 =
-    hashes
-      .grouped(2)
-      .map(_.toList match {
-        case leaf1 :: leaf2 :: Nil => Crypto.sha256(leaf1 ++ leaf2)
-        case singleleaf :: Nil     => singleleaf
-        case _ =>
-          throw new Exception(
-            "list bigger than 2 elements or empty? shouldn't happen."
-          )
-      })
-      .pipe(hashes => merkle(hashes.toList))
+    if hashes.size == 1 then hashes(0)
+    else
+      hashes
+        .grouped(2)
+        .map(_.toList match {
+          case leaf1 :: leaf2 :: Nil => Crypto.sha256(leaf1 ++ leaf2)
+          case singleleaf :: Nil     => singleleaf
+          case _ =>
+            throw new Exception(
+              "list bigger than 2 elements or empty? shouldn't happen."
+            )
+        })
+        .pipe(hashes => merkle(hashes.toList))
 
   def validateTxs(txs: Set[Tx]): Boolean =
     txs.exists(thisTx =>

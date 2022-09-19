@@ -1,6 +1,7 @@
 import scala.collection.mutable.Map
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.Ordering.Implicits._
 import scala.util.chaining._
 import scodec.bits.ByteVector
 import com.github.lolgab.httpclient.{Request, Method}
@@ -8,15 +9,20 @@ import ujson._
 import scoin._
 
 object Publish {
-  import Main.rpc
+  import Main.{logger, rpc}
 
   var overseerURL: String = ""
 
   // { bmmHash: block }
   val pendingPublishedBlocks: Map[ByteVector32, ByteVector] = Map.empty
 
-  def publishBlock(block: ByteVector, fee: Satoshi): Future[Unit] = {
+  def publishBmmHash(block: ByteVector, fee: Satoshi): Future[String] = {
     val blockHash = Crypto.sha256(block)
+
+    logger.info
+      .item("bmm-hash", blockHash.toHex)
+      .item("fee", fee)
+      .msg("publishing bmm block")
 
     val finalPsbt = for {
       listfunds <- rpc("listfunds")
@@ -46,10 +52,16 @@ object Publish {
             List(ByteVector.fromByte(0), ByteVector.fromByte(20), pubkeyhash)
           )
         )
-
       val inputSum = outputs
-        .map(utxo => MilliSatoshi(utxo("amount_msat").num.toLong).toSatoshi)
-        .fold(Satoshi(0))(_ + _)
+        .map(utxo =>
+          MilliSatoshi(
+            utxo("amount_msat").numOpt
+              .map(_.toInt)
+              .getOrElse(utxo("amount_msat").str.takeWhile(_.isDigit).toInt)
+              .toLong
+          ).toSatoshi
+        )
+        .sum
 
       if (inputSum < fee)
         throw new Exception(
@@ -101,15 +113,24 @@ object Publish {
 
     for {
       psbt <- finalPsbt
+      _ = logger.debug.item("psbt", psbt).msg("")
       _ <- rpc("reserveinputs", ujson.Obj("psbt" -> psbt))
       signedPsbt <- rpc("signpsbt", ujson.Obj("psbt" -> psbt))
         .map(_("signed_psbt").str)
+      _ = logger.debug.item("signed", signedPsbt).msg("")
       res <- rpc("sendpsbt", ujson.Obj("psbt" -> signedPsbt))
+      _ = logger.debug.item("res", res).msg("")
     } yield {
       val txid = res("txid").str
+      logger.info
+        .item("bmm-hash", blockHash.toHex)
+        .item("bitcoin-txid", txid)
+        .msg("published bmm tx")
 
       // save these as an attempted tx-block publish
       pendingPublishedBlocks += (blockHash -> block)
+
+      txid
     }
   }
 }

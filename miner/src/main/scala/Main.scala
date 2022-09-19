@@ -6,6 +6,7 @@ import scala.util.{Try, Success, Failure}
 import scala.annotation.nowarn
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
+import scala.concurrent.duration._
 import scala.scalanative.loop.EventLoop.loop
 import scala.scalanative.loop.{Poll, Timer}
 import scodec.bits.ByteVector
@@ -123,7 +124,7 @@ object Main {
             "dynamic" -> true,
             "options" -> ujson.Arr(),
             "hooks" -> ujson.Arr(
-              ujson.Obj("name" -> "invoice_payment")
+              ujson.Obj("name" -> "htlc_accepted")
             ),
             "rpcmethods" -> ujson.Arr(
               ujson.Obj(
@@ -169,27 +170,26 @@ object Main {
         logger.debug.item("height", height).msg("a block has arrived")
         Manager.onBlock(height)
       }
-      case "invoice_payment" => {
-        val label = params("payment")("label").str
-        if (label.startsWith("miner:")) {
-          logger.debug.item("label", label).msg("invoice payment arrived")
-          Manager.acceptPayment(label).onComplete {
-            case Success(true) =>
-              logger.debug
-                .item("label", label)
-                .msg("we couldn't include the transaction")
-              reply(ujson.Obj("result" -> "continue"))
-            case Success(false) =>
-              System.err
-              logger.debug
-                .item("label", label)
-                .msg("we couldn't include the transaction")
-              reply(ujson.Obj("result" -> "reject"))
-            case Failure(err) =>
-              logger.err.item(err).msg("rejecting payment because of a failure")
-              reply(ujson.Obj("result" -> "reject"))
-          }
-        } else reply(ujson.Obj("result" -> "continue"))
+      case "htlc_accepted" => {
+        val hash = params("htlc")("payment_hash").str
+        logger.debug
+          .item("hash", hash.take(6))
+          .msg("invoice payment arrived")
+        Manager.acceptPayment(hash).onComplete {
+          case Success(true) =>
+            logger.debug
+              .item("hash", hash.take(6))
+              .msg("we couldn't include the transaction")
+            reply(ujson.Obj("result" -> "continue"))
+          case Success(false) =>
+            logger.debug
+              .item("hash", hash.take(6))
+              .msg("we couldn't include the transaction")
+            reply(ujson.Obj("result" -> "fail"))
+          case Failure(err) =>
+            logger.err.item(err).msg("rejecting payment because of a failure")
+            reply(ujson.Obj("result" -> "fail"))
+        }
       }
       case "openchain-status" =>
         reply(

@@ -67,7 +67,6 @@ object HttpServer {
                       .getOrElse(ujson.Null)
                   )
                 }
-                .pipe(ujson.Arr(_))
             case "getblock" =>
               Database
                 .getBlock(ByteVector.fromValidHex(params("hash").str))

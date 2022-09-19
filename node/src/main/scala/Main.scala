@@ -139,8 +139,7 @@ object BitcoinManager {
       .call("getchaintips")
       .foreach { tips =>
         if (tips(0)("height").num.toInt < height) {
-          // println("waiting for the next block")
-          js.timers.setTimeout(60000) {
+          js.timers.setTimeout(10000) {
             inspectNextBlocks(bmmHeight, tipTxid, height)
           }
         } else {
