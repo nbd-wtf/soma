@@ -36,15 +36,19 @@ object Node {
         else throw new Exception(b("error").toString)
       }
 
-  def getNextBlock(txs: Seq[ByteVector]): Future[ByteVector] =
+  def getNextBlock(txs: Seq[ByteVector]): Future[(ByteVector32, ByteVector)] =
     call(
       "makeblock",
       ujson.Obj(
         "txs" -> txs.map(_.toHex)
       )
     )
-      .map(_("hex").str)
-      .map(ByteVector.fromValidHex(_))
+      .map(row =>
+        (
+          ByteVector32(ByteVector.fromValidHex(row("hash").str)),
+          ByteVector.fromValidHex(row("block").str)
+        )
+      )
 
   def validateTx(tx: ByteVector): Future[Boolean] =
     call("validatetx", ujson.Obj("tx" -> tx.toHex))
@@ -67,7 +71,6 @@ object Node {
     call("getblock", ujson.Obj("hash" -> bmmHash.toHex))
       .map(r => r.objOpt.map(ujson.Obj(_)))
 
-  def registerBlock(block: ByteVector): Future[Unit] =
-    call("registerblock", ujson.Obj("hex" -> block.toHex))
-      .map(r => r.objOpt.map(ujson.Obj(_)))
+  def registerBlock(block: ByteVector): Future[ujson.Obj] =
+    call("registerblock", ujson.Obj("block" -> block.toHex)).map(r => r.obj)
 }

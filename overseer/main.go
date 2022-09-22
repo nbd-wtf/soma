@@ -55,6 +55,7 @@ var (
 	chainKey          *btcec.PrivateKey
 	chainPubKeyHash   []byte
 	chainPubKeyScript []byte
+	chainAddress      string
 	chainHasStarted   bool
 )
 
@@ -171,13 +172,18 @@ func main() {
 
 	// print addresses
 	chainPubKeyHash = btcutil.Hash160(chainKey.PubKey().SerializeCompressed())
-	chainAddress, _ := btcutil.NewAddressWitnessPubKeyHash(chainPubKeyHash, chainParams)
-	log.Debug().Str("address", chainAddress.String()).Msg("")
+	p2wpkhAddress, _ := btcutil.NewAddressWitnessPubKeyHash(chainPubKeyHash, chainParams)
+	chainAddress = p2wpkhAddress.String()
+	log.Info().
+		Str("address", chainAddress).
+		Int("canonical-amount", CANONICAL_AMOUNT).
+		Msg("send the canonical amount to this address to start the chain")
 	chainPubKeyScript = append([]byte{0, 20}, chainPubKeyHash...)
 
 	// handle commands
 	http.HandleFunc("/", handleInfo)
 	go http.ListenAndServe(":10738", nil)
+	log.Info().Int("port", 10738).Msg("listening")
 
 	// inspect blocks
 	inspectBlocks()

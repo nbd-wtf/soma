@@ -11,12 +11,14 @@ object Database {
   private var db: Database = _
 
   def init(): Unit = {
-    db = new Database(s"${Config.datadir}/openchain.sqlite")
+    db = new Database(
+      s"${Config.datadir}/db-${Config.genesisTx.take(5)}.sqlite"
+    )
     db.exec(
       "CREATE TABLE IF NOT EXISTS blocks (bmmheight INT UNIQUE NOT NULL, txid TEXT UNIQUE NOT NULL, bmmhash BLOB, block BLOB, blockheight INT)"
     )
     db.exec(
-      "CREATE TABLE IF NOT EXISTS current (bmmheight INT NOT NULL REFERENCES blocks (bmmheight), bmmhash BLOB NOT NULL)"
+      "CREATE TABLE IF NOT EXISTS current (k TEXT PRIMARY KEY, blockheight INT NOT NULL, bmmhash BLOB NOT NULL REFERENCES blocks (bmmhash))"
     )
     db.exec(
       "CREATE TABLE IF NOT EXISTS state (asset BLOB PRIMARY KEY, owner BLOB NOT NULL, counter INT NOT NULL)"
@@ -43,7 +45,7 @@ object Database {
       )
 
   private lazy val getMissingBlocksStmt = db.prepare(
-    "SELECT bmmhash FROM blocks WHERE bmmhash IS NOT NULL AND block IS NULL"
+    "SELECT DISTINCT bmmhash FROM blocks WHERE bmmhash IS NOT NULL AND block IS NULL"
   )
   def getMissingBlocks(): List[ByteVector32] = getMissingBlocksStmt
     .all()
@@ -53,6 +55,59 @@ object Database {
         .fromUint8Array(row.selectDynamic("bmmhash").asInstanceOf[Uint8Array])
         .pipe(ByteVector32(_))
     )
+
+  private lazy val getUniqueHighestBlockHeightStmt = db.prepare(
+    "SELECT blockheight FROM blocks WHERE blockheight = max(blockheight)"
+  )
+  def getUniqueHighestBlockHeight(): Option[Int] = {
+    val rows = getUniqueHighestBlockHeightStmt.all()
+    if rows.size != 1 then None
+    else Some(rows(0).selectDynamic("blockheight").asInstanceOf[Double].toInt)
+  }
+
+  private lazy val getBlocksBetweenHereAndThereStmt = db.prepare(
+    "SELECT block, blockheight FROM blocks WHERE blockheight > ? AND blockheight <= ? ORDER BY blockheight"
+  )
+  def getBlocksBetweenHereAndThere(
+      here: Int,
+      hereHash: ByteVector32,
+      there: Int
+  ): Iterable[Block] =
+    getBlocksBetweenHereAndThereStmt
+      .all(here, there)
+      .map(row =>
+        (
+          asBlockOpt(row),
+          row.selectDynamic("blockheight").asInstanceOf[Double].toInt
+        )
+      )
+      .groupBy((_, h) => h) // group together blocks at the same height
+
+      // discard the height
+      .map((h, entries) => entries.map((blocks, _) => blocks))
+
+      // for all groups of the same height, pick the block whose .header.previous
+      //   matches the previous block we had picked, starting with the bmmhash
+      //   provided as an argument
+      .scanLeft[(ByteVector32, Option[Block])]((hereHash, None))(
+        (prev, group) =>
+          group
+            .find(block =>
+              (prev._1, block) match {
+                case (prevHash, Some(curr)) =>
+                  curr.header.previous == prevHash
+                case _ => false;
+              }
+            )
+            .flatten
+            .pipe(blockOpt =>
+              (blockOpt.map(_.hash).getOrElse(ByteVector32.Zeroes) -> blockOpt)
+            )
+      )
+      .drop(1) // drop first dummy block we've started the scan with
+      .map((_, blockOpt) => blockOpt)
+      .takeWhile(_.isDefined) // stop whenever we find a block we don't have
+      .map(_.get) // return the blocks
 
   private lazy val getBmmTxsSinceStmt = db.prepare(
     "SELECT txid, bmmheight, bmmhash FROM blocks WHERE bmmheight > ? ORDER BY bmmheight"
@@ -130,24 +185,30 @@ object Database {
 
   private lazy val insertBlockStmt =
     db.prepare(
-      "UPDATE blocks SET block = ?, blockheight = ? WHERE bmmhash = ? AND block IS NULL"
+      "UPDATE blocks SET block = ?, blockheight = ? WHERE bmmhash = ? AND block IS NULL RETURNING 1"
     )
-  def insertBlock(hash: ByteVector32, block: Block) =
-    Block.codec.encode(block).toOption.foreach { bs =>
-      insertBlockStmt
-        .run(
-          bs.toByteVector,
-          if block.header.previous == ByteVector.fill(32)(0) then 1
-          else
-            getBlockHeight(block.header.previous)
-              .map[SQLiteValue](_ + 1)
-              .getOrElse[SQLiteValue](null)
-          ,
-          hash
-        )
+  def insertBlock(hash: ByteVector32, block: Block): Boolean = {
+    Block.codec
+      .encode(block)
+      .toOption
+      .flatMap { bs =>
+        val r = insertBlockStmt
+          .get(
+            bs.toByteVector,
+            if block.header.previous == ByteVector32.Zeroes then 1
+            else
+              getBlockHeight(block.header.previous)
+                .map[SQLiteValue](_ + 1)
+                .getOrElse[SQLiteValue](null)
+            ,
+            hash.bytes.toUint8Array
+          )
+        r.toOption
 
-    // TODO update all blockheight of the following bmm blocks that match this one recursively
-    }
+        // TODO update all blockheight of the following bmm blocks that match this one recursively
+      }
+      .isDefined
+  }
 
   private lazy val getBlockHeightStmt =
     db.prepare("SELECT blockheight FROM blocks WHERE bmmhash = ?")
@@ -219,7 +280,7 @@ object Database {
   )
   def getAssetOwner(asset: ByteVector32): Option[Crypto.XOnlyPublicKey] =
     getAssetOwnerStmt
-      .get()
+      .get(asset)
       .toOption
       .map(_.selectDynamic("owner").asInstanceOf[Uint8Array])
       .map(
@@ -230,13 +291,13 @@ object Database {
       )
 
   private lazy val getCurrentTipStmt =
-    db.prepare("SELECT bmmheight, bmmhash FROM current")
+    db.prepare("SELECT blockheight, bmmhash FROM current")
   def getCurrentTip(): (Int, ByteVector32) = getCurrentTipStmt
     .get()
     .toOption
     .map(row =>
       (
-        row.selectDynamic("bmmheight").asInstanceOf[Double].toInt,
+        row.selectDynamic("blockheight").asInstanceOf[Double].toInt,
         row
           .selectDynamic("bmmhash")
           .asInstanceOf[Uint8Array]
@@ -246,18 +307,53 @@ object Database {
     .getOrElse((0, ByteVector32.Zeroes))
 
   private lazy val updateCurrentTipStmt =
-    db.prepare("UPDATE current SET bmmheight = bmmheight + 1, bmmhash = ?")
+    db.prepare(
+      "INSERT INTO current (k, blockheight, bmmhash) VALUES ('processed', 1, ?) ON CONFLICT (k) DO UPDATE SET blockheight = blockheight + ?, bmmhash = ?"
+    )
   private lazy val updateAssetOwnershipStmt =
     db.prepare(
-      "UPDATE state SET owner = ?, counter = counter + 1 WHERE asset = ?"
+      "INSERT INTO state (owner, asset, counter) VALUES (?, ?, 1) ON CONFLICT (asset) DO UPDATE SET owner = ?, counter = ? WHERE asset = ? AND counter = ?"
     )
 
   def processBlock(block: Block): Unit = {
     db.exec("BEGIN TRANSACTION")
-    updateCurrentTipStmt.run(block.hash)
+
+    println(s"processing block ${block.hash}")
+    updateCurrentTipStmt.run(block.hash, 1, block.hash)
 
     block.txs.foreach { tx =>
-      updateAssetOwnershipStmt.run(tx.to, tx.asset, tx.counter)
+      println(s"  ~ tx ${tx.hash.toHex.take(5)}: ${tx.asset.toHex
+          .take(5)} from ${tx.from.toHex.take(5)} to ${tx.to.toHex.take(5)}")
+      updateAssetOwnershipStmt.run(
+        tx.to,
+        tx.asset,
+        tx.to,
+        tx.counter + 1,
+        tx.asset,
+        tx.counter
+      )
+    }
+
+    db.exec("COMMIT")
+  }
+
+  def rewindBlock(block: Block): Unit = {
+    db.exec("BEGIN TRANSACTION")
+
+    println(s"rewinding block ${block.hash}")
+    updateCurrentTipStmt.run(block.header.previous, -1, block.header.previous)
+
+    block.txs.foreach { tx =>
+      println(s"  ~ tx ${tx.hash.toHex.take(5)}: ${tx.asset.toHex
+          .take(5)} from ${tx.from.toHex.take(5)} to ${tx.to.toHex.take(5)}")
+      updateAssetOwnershipStmt.run(
+        tx.from,
+        tx.asset,
+        tx.from,
+        tx.counter,
+        tx.asset,
+        tx.counter + 1
+      )
     }
 
     db.exec("COMMIT")

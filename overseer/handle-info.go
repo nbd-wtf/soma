@@ -15,6 +15,24 @@ import (
 func handleInfo(w http.ResponseWriter, r *http.Request) {
 	log.Debug().Msg("http call")
 
+	var genesis string
+	if err := db.Get(
+		&genesis,
+		"SELECT txid FROM chain_block_tx WHERE idx = 1",
+	); err != nil {
+		w.WriteHeader(404)
+		json.NewEncoder(w).Encode(struct {
+			Message string `json:"message"`
+			Amount  int    `json:"amount"`
+			Address string `json:"address"`
+		}{
+			"Genesis transaction not found. To bootstrap this chain send the canonical amount of satoshis to the canonical address.",
+			CANONICAL_AMOUNT,
+			chainAddress,
+		})
+		return
+	}
+
 	var current struct {
 		TxCount uint64 `db:"idx" json:"tx_count,omitempty"`
 		TipTx   string `db:"txid" json:"tip_tx,omitempty"`
@@ -23,8 +41,7 @@ func handleInfo(w http.ResponseWriter, r *http.Request) {
 		&current,
 		"SELECT idx, txid FROM chain_block_tx ORDER BY idx DESC LIMIT 1",
 	); err != nil {
-		log.Error().Err(err).Msg("error fetching txid tip on / -- is there a genesis tx registered on the db?")
-		w.WriteHeader(501)
+		w.WriteHeader(502)
 		return
 	}
 
@@ -92,7 +109,8 @@ func handleInfo(w http.ResponseWriter, r *http.Request) {
 
 	// and return the response
 	json.NewEncoder(w).Encode(struct {
+		Genesis string      `json:"genesis"`
 		Current interface{} `json:"current"`
 		Next    interface{} `json:"next"`
-	}{current, next})
+	}{genesis, current, next})
 }

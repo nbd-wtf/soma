@@ -5,7 +5,7 @@ import scala.util.control.Breaks._
 import scala.util.{Try, Success, Failure}
 import scala.annotation.nowarn
 import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.Future
+import scala.concurrent.{Promise, Future}
 import scala.concurrent.duration._
 import scala.scalanative.loop.EventLoop.loop
 import scala.scalanative.loop.{Poll, Timer}
@@ -136,6 +136,11 @@ object Main {
                 "name" -> "openchain-invoice",
                 "usage" -> "tx msatoshi",
                 "description" -> "takes the transaction you want to publish plus how much in fees you intend to contribute -- this is supposed to be called by the public through commando"
+              ),
+              ujson.Obj(
+                "name" -> "openchain-waitinvoice",
+                "usage" -> "hash",
+                "description" -> "returns when a payment is seen for the given invoice, but not necessarily settled"
               )
             ),
             "options" -> ujson.Arr(
@@ -195,7 +200,7 @@ object Main {
         reply(
           ujson.Obj(
             "pending_txs" -> Manager.pendingTransactions.size,
-            "acc_fees" -> Manager.totalFees.toLong
+            "acc_fees" -> Manager.totalFees.toLong.toInt
           )
         )
       case "openchain-invoice" =>
@@ -210,15 +215,38 @@ object Main {
             )
           )
 
-          Manager.addNewTransaction(tx, amount).onComplete {
-            case Success(bolt11) =>
+          Manager.makeInvoiceForTransaction(tx, amount).onComplete {
+            case Success((bolt11, hash)) =>
               reply(
                 ujson.Obj(
-                  "invoice" -> bolt11
+                  "invoice" -> bolt11,
+                  "hash" -> hash
                 )
               )
             case Failure(err) =>
               replyError(1, err.toString)
+          }
+        } catch {
+          case err: java.util.NoSuchElementException =>
+            replyError(400, "wrong params")
+          case err: Throwable => replyError(500, s"something went wrong: $err")
+        }
+      case "openchain-waitinvoice" =>
+        try {
+          val hash = (params match {
+            case o: Obj => o("hash").str
+            case a: Arr => a(0).str
+          })
+
+          val p = Promise[Unit]()
+          Manager.invoiceWaiters.updateWith(hash) {
+            case None           => Some(Set(p))
+            case Some(promises) => Some(promises + p)
+          }
+
+          // this future will always resolve with a success
+          p.future.foreach { _ =>
+            reply(ujson.Obj() /* irrelevant */ )
           }
         } catch {
           case err: java.util.NoSuchElementException =>

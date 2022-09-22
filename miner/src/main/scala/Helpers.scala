@@ -1,7 +1,6 @@
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.concurrent.{Future, Promise}
-import scala.util.{Success, Failure}
 import scala.scalanative.loop.Timer
 
 object Helpers {
@@ -9,7 +8,7 @@ object Helpers {
       extends Exception("debounced function canceled")
 
   def debounce[A, B](
-      fn: Function[A, Future[B]],
+      fn: Function[A, B],
       duration: FiniteDuration
   ): Function[A, Future[B]] = {
     var timer = Timer.timeout(0.seconds) { () => }
@@ -30,10 +29,7 @@ object Helpers {
       promise = Promise[B]()
       timer = Timer.timeout(duration) { () =>
         // actually run the function when the timer ends
-        fn(arg).onComplete {
-          case Success(v)   => promise.success(v)
-          case Failure(err) => promise.failure(err)
-        }
+        promise.success(fn(arg))
       }
 
       // if this was the last time this function was called in rapid succession

@@ -16,9 +16,11 @@ object Publish {
   // { bmmHash: block }
   val pendingPublishedBlocks: Map[ByteVector32, ByteVector] = Map.empty
 
-  def publishBmmHash(block: ByteVector, fee: Satoshi): Future[String] = {
-    val blockHash = Crypto.sha256(block)
-
+  def publishBmmHash(
+      blockHash: ByteVector32,
+      block: ByteVector,
+      fee: Satoshi
+  ): Future[String] = {
     logger.info
       .item("bmm-hash", blockHash.toHex)
       .item("fee", fee)
@@ -114,7 +116,14 @@ object Publish {
     for {
       psbt <- finalPsbt
       _ = logger.debug.item("psbt", psbt).msg("")
-      _ <- rpc("reserveinputs", ujson.Obj("psbt" -> psbt))
+      _ <- rpc(
+        "reserveinputs",
+        ujson.Obj(
+          "psbt" -> psbt,
+          "reserve" -> 1,
+          "exclusive" -> false
+        )
+      )
       signedPsbt <- rpc("signpsbt", ujson.Obj("psbt" -> psbt))
         .map(_("signed_psbt").str)
       _ = logger.debug.item("signed", signedPsbt).msg("")

@@ -1,4 +1,4 @@
-import util.chaining.scalaUtilChainingOps
+import util.chaining._
 import scala.scalajs.js
 import scala.scalajs.js.annotation.JSImport
 import scodec.bits.ByteVector
@@ -6,6 +6,8 @@ import scodec.DecodeResult
 import upickle.default._
 import scala.scalajs.js.typedarray.Uint8Array
 import scoin.{Crypto, ByteVector32}
+
+import Picklers._
 
 object HttpServer {
   def start(): Unit = {
@@ -70,7 +72,7 @@ object HttpServer {
             case "getblock" =>
               Database
                 .getBlock(ByteVector.fromValidHex(params("hash").str))
-                .map(block => ujson.read(write(block)))
+                .map(block => writeJs(block))
                 .getOrElse(ujson.Null)
             case "getassetowner" =>
               Database
@@ -82,11 +84,25 @@ object HttpServer {
             case "getaccountassets" =>
               Database
                 .getAccountAssets(
-                  Crypto.XOnlyPublicKey(
-                    ByteVector32(
-                      ByteVector.fromValidHex(params("pubkey").str)
-                    )
-                  )
+                  (params.obj.get("pubkey"), params.obj.get("privkey")) match {
+                    case (_, Some(priv)) =>
+                      Crypto
+                        .PrivateKey(
+                          ByteVector32(
+                            ByteVector.fromValidHex(priv.str)
+                          )
+                        )
+                        .publicKey
+                        .xonly
+                    case (Some(pub), _) =>
+                      Crypto.XOnlyPublicKey(
+                        ByteVector32(
+                          ByteVector.fromValidHex(pub.str)
+                        )
+                      )
+                    case _ =>
+                      throw new Exception("pubkey or privkey must be provided")
+                  }
                 )
                 .map(_.toHex)
 
@@ -101,7 +117,7 @@ object HttpServer {
                 ByteVector32(ByteVector.fromValidHex(params("privateKey").str))
               )
               ujson.Obj(
-                "hex" -> Tx.codec
+                "tx" -> Tx.codec
                   .encode(Tx.build(asset, to, privateKey))
                   .require
                   .toHex
@@ -135,27 +151,37 @@ object HttpServer {
                 case Left(err) => throw new Exception(err)
                 case Right(block) =>
                   ujson.Obj(
-                    "hex" -> Block.codec.encode(block).toOption.get.toHex
+                    "block" -> Block.codec.encode(block).toOption.get.toHex,
+                    "hash" -> block.hash.toHex
                   )
               }
 
             case "registerblock" =>
               Block.codec
-                .decode(ByteVector.fromValidHex(params("hex").str).toBitVector)
+                .decode(
+                  ByteVector.fromValidHex(params("block").str).toBitVector
+                )
                 .toOption match {
-                case Some(DecodeResult(block, remaining))
-                    if remaining.isEmpty =>
-                  Database.insertBlock(block.hash, block)
-                  ujson.Obj("ok" -> "true", "hash" -> block.hash.toHex)
-                case _ => throw new Exception("failed to parse block hex")
+                case Some(DecodeResult(block, _)) =>
+                  val ok = Database.insertBlock(block.hash, block)
+                  ujson.Obj("ok" -> ok, "hash" -> block.hash.toHex)
+                case _ =>
+                  ujson.Obj("ok" -> false)
               }
           }
 
+          res.setHeader("Access-Control-Allow-Origin", "*")
+          res.setHeader("Access-Control-Allow-Methods", "OPTIONS, POST")
           res.end(ujson.write(ujson.Obj("id" -> id, "result" -> result)))
         } catch {
           case err: Throwable =>
             System.err.println(
-              err.getStackTrace().take(4).map(_.toString()).mkString("\n")
+              s"RPC command resulted in error"
+            )
+            System.err.println(err)
+            System.err.println(
+              "  " +
+                err.getStackTrace().take(12).map(_.toString()).mkString("\n  ")
             )
             res.end(ujson.write(ujson.Obj("id" -> id, "error" -> err.toString)))
         }
@@ -181,5 +207,6 @@ trait Request extends js.Object {
 
 @js.native
 trait Response extends js.Object {
+  def setHeader(k: String, v: String): Unit = js.native
   def end(response: String): Unit = js.native
 }

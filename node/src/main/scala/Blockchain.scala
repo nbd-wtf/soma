@@ -114,7 +114,19 @@ object Tx {
       ("to" | xonlypublickey) ::
       ("signature" | bytes64)).as[Tx]
 
-  given ReadWriter[Tx] = macroRW
+  given ReadWriter[Tx] = ReadWriter.join(
+    macroR,
+    writer[ujson.Value].comap[Tx](tx =>
+      ujson.Obj(
+        "id" -> writeJs(tx.hash),
+        "counter" -> writeJs(tx.counter),
+        "asset" -> writeJs(tx.asset),
+        "from" -> writeJs(tx.from),
+        "to" -> writeJs(tx.to),
+        "signature" -> writeJs(tx.signature)
+      )
+    )
+  )
 
   def build(
       asset: ByteVector32,
@@ -146,8 +158,8 @@ object Tx {
         .pipe(hashes => merkle(hashes.toList))
 
   def validateTxs(txs: Set[Tx]): Boolean =
-    txs.exists(thisTx =>
-      thisTx.validate(txs.filterNot(_ == thisTx).toSet) == false
+    txs.forall(thisTx =>
+      thisTx.validate(txs.filterNot(_ == thisTx).toSet) == true
     )
 }
 
@@ -164,10 +176,4 @@ object Picklers {
   given ReadWriter[Crypto.XOnlyPublicKey] =
     readwriter[ByteVector32]
       .bimap[Crypto.XOnlyPublicKey](_.value, Crypto.XOnlyPublicKey(_))
-
-  given ReadWriter[Tx] =
-    readwriter[ujson.Value].bimap[Tx](
-      tx => writeJs(tx).obj.addOne("id" -> tx.hash.toHex),
-      json => read(json)
-    )
 }

@@ -84,12 +84,18 @@ object PeerManager {
                 .toByteVector
                 .toUint8Array
             )
-          case AnswerBlock(hash, Some(block))
-              if block.validate() && block.header.hash == hash =>
-            Database.insertBlock(hash, block)
 
-          case AnswerBlock(hash, None) =>
-            println(s"got answer: no block known for ${hash.toHex}")
+          case AnswerBlock(hash, Some(block))
+              if block.hash != hash || !block.validate() =>
+            println(
+              s"got an invalid block for ${hash.toHex}: ${block.hash} != $hash OR valid? ${block.validate()}"
+            )
+
+          case AnswerBlock(hash, Some(block)) =>
+            val ok = Database.insertBlock(hash, block)
+            if (ok) println("block inserted") else println("failed to insert")
+
+          case AnswerBlock(hash, None) => // peer doesn 't have this block
         }
       }
       case Attempt.Failure(err) => println(s"got unknown message $msg")
@@ -160,17 +166,23 @@ object BitcoinManager {
                 ) match {
                 case Some(foundTx) =>
                   val txid = foundTx("txid").str
-                  println(s"found $txid")
+                  println(
+                    s"found bmm $txid at bitcoin block $height, this is at bmm height $bmmHeight"
+                  )
                   val bmmHashOpt = getBmmHash(foundTx.obj)
                   Database.addTx(bmmHeight, txid, bmmHashOpt)
+
+                  // give some time for block to go from miner to their node before we request
                   bmmHashOpt.foreach { bmmHash =>
-                    PeerManager.sendAll(
-                      WireMessage.codec
-                        .encode(RequestBlock(bmmHash))
-                        .toOption
-                        .get
-                        .toByteVector
-                    )
+                    js.timers.setTimeout(5000) {
+                      PeerManager.sendAll(
+                        WireMessage.codec
+                          .encode(RequestBlock(bmmHash))
+                          .toOption
+                          .get
+                          .toByteVector
+                      )
+                    }
                   }
                   Future { inspectNextBlocks(bmmHeight + 1, txid, height + 1) }
                 case None =>
@@ -184,33 +196,51 @@ object BitcoinManager {
 
 object StateManager {
   def start(): Unit = {
-    val (bmmHeight, bmmHash) = Database.getCurrentTip()
-    processBlocksFrom(bmmHeight, bmmHash)
+    val (height, bmmHash) = Database.getCurrentTip()
+    processBlocksFrom(height + 1, bmmHash)
   }
 
-  def processBlocksFrom(bmmHeight: Int, bmmHash: ByteVector32): Unit = {
-    println(s"processing block at $bmmHeight")
-    Database.getBlockAtBmmHeight(bmmHeight + 1) match {
+  def processBlocksFrom(height: Int, bmmHash: ByteVector32): Unit = {
+    Database.getBlockAtHeight(height) match {
       case Some(block) if (block.header.previous == bmmHash) => {
+        println(s"processing block at $height")
+
         // process this
         Database.processBlock(block)
 
         // ask for the next
-        processBlocksFrom(bmmHeight + 1, block.hash)
+        processBlocksFrom(height + 1, block.hash)
       }
       case Some(block) =>
-      // TODO block's previous is a different hash than the current, i.e. we have a chain split
-      case None =>
-        // check if we have other txs after this one
-        Database.getLatestTx() match {
-          case Some(_, latestBmmHeight, _) if latestBmmHeight > bmmHeight =>
-            // we do! go to the next
-            processBlocksFrom(bmmHeight + 1, bmmHash)
-          case _ =>
-            // we don't, stop here and try again later
+        // block's previous is a different hash than the current, i.e. we have a chain split
+        println(s"chain split at $height!")
+        // instead of walking in the dark let's check if we have a winner from the split after all
+        Database.getUniqueHighestBlockHeight() match {
+          case None =>
+            // none? there must be two candidates or more, so let's wait
+            println("  waiting a little for the split to resolve itself")
             js.timers.setTimeout(60000) {
-              processBlocksFrom(bmmHeight, bmmHash)
+              processBlocksFrom(height, bmmHash)
             }
+          case Some(highestHeight) =>
+            println(
+              s"  the highest height we have is $highestHeight, getting the common blocks between here and there"
+            )
+            val blocks = Database
+              .getBlocksBetweenHereAndThere(height, bmmHash, highestHeight)
+
+            // process all these in order
+            blocks
+              .foreach { Database.processBlock(_) }
+
+            // now proceed from there
+            processBlocksFrom(highestHeight + 1, blocks.last.hash)
+        }
+      case None =>
+        println(s"no block at $height")
+        println(s"  waiting a little before trying again")
+        js.timers.setTimeout(60000) {
+          processBlocksFrom(height, bmmHash)
         }
     }
   }
