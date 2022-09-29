@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/Dexconv/go-bitcoind"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
@@ -45,10 +46,26 @@ func handleInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// our output is always the 0th, except in the first tx after the genesis, when it could be anywhere
+	outputIdx := 0
+	if current.TxCount < 2 {
+		itx, err := bc.GetRawTransaction(current.TipTx, true)
+		if err != nil {
+			w.WriteHeader(503)
+			return
+		}
+		tx := itx.(bitcoind.RawTransaction)
+		for idx, output := range tx.Vout {
+			if output.ScriptPubKey.Hex == hex.EncodeToString(chainPubKeyScript) {
+				outputIdx = idx
+			}
+		}
+	}
+
 	// make the next presigned tx
 	tip, _ := chainhash.NewHashFromStr(current.TipTx)
 	packet, _ := psbt.New(
-		[]*wire.OutPoint{{Hash: *tip, Index: 0}},
+		[]*wire.OutPoint{{Hash: *tip, Index: uint32(outputIdx)}},
 		[]*wire.TxOut{{Value: CANONICAL_AMOUNT, PkScript: chainPubKeyScript}},
 		2,
 		0,
