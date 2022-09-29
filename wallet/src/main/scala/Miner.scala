@@ -5,6 +5,7 @@ import scala.scalajs.js
 import org.scalajs.dom
 import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
 import com.raquo.laminar.api.L._
+import io.circe.syntax._
 import io.circe.generic.auto._
 
 class Miner(pubkey: String, address: String, rune: String) {
@@ -23,7 +24,7 @@ class Miner(pubkey: String, address: String, rune: String) {
     .flatMap(hash =>
       EventStream.fromFuture(
         commando
-          .rpc("openchain-waitinvoice", js.Dictionary("payment_hash" -> hash))
+          .rpc("openchain-waitinvoice", Map("payment_hash" -> hash.asJson))
       )
     )
     .map(_ => true)
@@ -77,9 +78,9 @@ class Miner(pubkey: String, address: String, rune: String) {
               commando
                 .rpc(
                   "openchain-invoice",
-                  js.Dictionary(
-                    "tx" -> nextTx.now(),
-                    "msatoshi" -> nextFee.now()
+                  Map(
+                    "tx" -> nextTx.now().asJson,
+                    "msatoshi" -> nextFee.now().asJson
                   )
                 )
                 .map(_.as[MinerInvoice].toOption.get)

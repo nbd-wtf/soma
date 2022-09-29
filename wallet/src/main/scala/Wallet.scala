@@ -14,8 +14,9 @@ object Wallet {
     .flatMap(_ => EventStream.fromFuture(getInfo()))
     .toSignal(NodeInfo.empty)
 
-  val assets =
-    info.changes.flatMap(_ => EventStream.fromFuture(getAssets(PrivateKey.key)))
+  val assets = EventStream
+    .combine(info.changes, PrivateKey.key.changes)
+    .flatMap((info, key) => EventStream.fromFuture(getAssets(key)))
 
   def render(): HtmlElement =
     div(

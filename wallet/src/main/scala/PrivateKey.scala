@@ -1,22 +1,29 @@
 import scala.util.Random
-import org.scalajs.dom
+import scala.scalajs.js
+import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
 import com.raquo.laminar.api.L._
 
 object PrivateKey {
-  lazy val key: String = {
-    Option(dom.window.localStorage.getItem("key")) match {
-      case Some(key) => key
-      case None => {
-        val k = List
-          .fill[Int](32)(Random.nextInt(16))
-          .map(_.toHexString)
-          .map(x => if (x.size == 2) x else s"0$x")
-          .mkString
-        dom.window.localStorage.setItem("key", k)
-        k
-      }
+  val key = EventStream
+    .fromFuture {
+      js.Dynamic.global
+        .loadKey()
+        .asInstanceOf[js.Promise[String]]
+        .toFuture
+        .map {
+          case nothing if nothing == "" => {
+            val k = List
+              .fill[Int](32)(Random.nextInt(16))
+              .map(_.toHexString)
+              .map(x => if (x.size == 2) x else s"0$x")
+              .mkString
+            js.Dynamic.global.storeKey(k)
+            k
+          }
+          case key => key
+        }
     }
-  }
+    .toSignal("")
 
   def render(): HtmlElement =
     div(
@@ -26,6 +33,9 @@ object PrivateKey {
         cls := "text-xl text-ellipsis overflow-hidden",
         "Keys"
       ),
-      div(b("Private Key: "), code(key))
+      div(
+        b("Private Key: "),
+        child <-- key.map(code(_))
+      )
     )
 }

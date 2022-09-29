@@ -11,3 +11,4 @@ data/
 yarn*
 node_modules
 *.sqlite
+wallet
