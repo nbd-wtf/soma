@@ -18,8 +18,18 @@ import upack.Obj.apply
 object Main {
   val logger = new nlog.Logger()
 
-  private var rpcAddr: String = ""
+  private var rpcAddrPromise = Promise[String]()
+  private var rpcAddr: Future[String] = rpcAddrPromise.future
   private var nextId = 0
+
+  val operational = Future
+    .sequence(
+      List(
+        Datastore.loadingPendingTransactions,
+        Datastore.loadingPendingBlocks
+      )
+    )
+    .map(_ => ())
 
   def main(args: Array[String]): Unit = {
     Poll(0).startRead { v =>
@@ -53,11 +63,7 @@ object Main {
   def rpc(
       method: String,
       params: ujson.Obj | ujson.Arr = ujson.Obj()
-  ): Future[ujson.Value] = {
-    if (rpcAddr == "") {
-      return Future.failed(Exception("rpc address is not known yet"))
-    }
-
+  ): Future[ujson.Value] = rpcAddr.flatMap { addr =>
     nextId += 1
 
     val payload =
@@ -71,7 +77,7 @@ object Main {
       )
 
     UnixSocket
-      .call(rpcAddr, payload)
+      .call(addr, payload)
       .future
       .map(ujson.read(_))
       .flatMap(read =>
@@ -166,40 +172,44 @@ object Main {
         reply(ujson.Obj())
 
         val lightningDir = params("configuration")("lightning-dir").str
-        rpcAddr = lightningDir + "/" + params("configuration")("rpc-file").str
+        rpcAddrPromise.success(
+          lightningDir + "/" + params("configuration")("rpc-file").str
+        )
         Node.nodeUrl = params("options")("node-url").str
         Publish.overseerURL = params("options")("overseer-url").str
       }
-      case "block_added" => {
-        val height = params("block")("height").num.toInt
-        logger.debug.item("height", height).msg("a block has arrived")
-        Manager.onBlock(height)
-      }
-      case "htlc_accepted" => {
-        val hash = params("htlc")("payment_hash").str
-        logger.debug
-          .item("hash", hash.take(6))
-          .msg("invoice payment arrived")
-        Manager.acceptPayment(hash).onComplete {
-          case Success(true) =>
-            logger.debug
-              .item("hash", hash.take(6))
-              .msg("we couldn't include the transaction")
-            reply(ujson.Obj("result" -> "continue"))
-          case Success(false) =>
-            logger.debug
-              .item("hash", hash.take(6))
-              .msg("we couldn't include the transaction")
-            reply(ujson.Obj("result" -> "fail"))
-          case Failure(err) =>
-            logger.err.item(err).msg("rejecting payment because of a failure")
-            reply(ujson.Obj("result" -> "fail"))
+      case "block_added" =>
+        operational.foreach { _ =>
+          val height = params("block")("height").num.toInt
+          logger.debug.item("height", height).msg("a block has arrived")
+          Manager.onBlock(height)
         }
-      }
+      case "htlc_accepted" =>
+        operational.foreach { _ =>
+          val hash = params("htlc")("payment_hash").str
+          logger.debug
+            .item("hash", hash.take(6))
+            .msg("invoice payment arrived")
+          Manager.acceptPayment(hash).onComplete {
+            case Success(true) =>
+              logger.debug
+                .item("hash", hash.take(6))
+                .msg("fulfilling lightning payment")
+              reply(ujson.Obj("result" -> "continue"))
+            case Success(false) =>
+              logger.debug
+                .item("hash", hash.take(6))
+                .msg("we couldn't include the transaction")
+              reply(ujson.Obj("result" -> "fail"))
+            case Failure(err) =>
+              logger.err.item(err).msg("rejecting payment because of a failure")
+              reply(ujson.Obj("result" -> "fail"))
+          }
+        }
       case "openchain-status" =>
         reply(
           ujson.Obj(
-            "pending_txs" -> Manager.pendingTransactions.size,
+            "pending_txs" -> Manager.pendingTransactions.keySet,
             "acc_fees" -> Manager.totalFees.toLong.toInt
           )
         )

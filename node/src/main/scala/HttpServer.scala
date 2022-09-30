@@ -70,8 +70,13 @@ object HttpServer {
                   )
                 }
             case "getblock" =>
-              Database
-                .getBlock(ByteVector.fromValidHex(params("hash").str))
+              ((params.obj.get("hash"), params.obj.get("height")) match {
+                case (Some(hash), _) =>
+                  Database.getBlock(ByteVector.fromValidHex(hash.str))
+                case (_, Some(height)) =>
+                  Database.getBlockAtHeight(height.num.toInt)
+                case _ => throw new Exception("provide either hash or height")
+              })
                 .map(block => writeJs(block))
                 .getOrElse(ujson.Null)
             case "getassetowner" =>
@@ -84,27 +89,33 @@ object HttpServer {
             case "getaccountassets" =>
               Database
                 .getAccountAssets(
-                  (params.obj.get("pubkey"), params.obj.get("privkey")) match {
-                    case (_, Some(priv)) =>
-                      Crypto
-                        .PrivateKey(
-                          ByteVector32(
-                            ByteVector.fromValidHex(priv.str)
-                          )
-                        )
-                        .publicKey
-                        .xonly
-                    case (Some(pub), _) =>
-                      Crypto.XOnlyPublicKey(
-                        ByteVector32(
-                          ByteVector.fromValidHex(pub.str)
-                        )
-                      )
-                    case _ =>
-                      throw new Exception("pubkey or privkey must be provided")
-                  }
+                  Crypto.XOnlyPublicKey(
+                    ByteVector32(
+                      ByteVector.fromValidHex(params("pubkey").str)
+                    )
+                  )
                 )
                 .map(_.toHex)
+            case "listallassets" =>
+              Database
+                .listAllAssets()
+                .map((asset, owner) => (asset.toHex, owner.toHex))
+            case "decodeblock" =>
+              Block.codec
+                .decode(
+                  ByteVector.fromValidHex(params("hex").str).bits
+                )
+                .require
+                .value
+                .pipe(writeJs(_))
+            case "decodetx" =>
+              Tx.codec
+                .decode(
+                  ByteVector.fromValidHex(params("hex").str).bits
+                )
+                .require
+                .value
+                .pipe(writeJs(_))
 
             // to be called by the user
             case "buildtx" =>
@@ -116,23 +127,33 @@ object HttpServer {
               val privateKey = Crypto.PrivateKey(
                 ByteVector32(ByteVector.fromValidHex(params("privateKey").str))
               )
+              val tx = Tx.build(asset, to, privateKey)
               ujson.Obj(
+                "hash" -> tx.hash.toHex,
                 "tx" -> Tx.codec
-                  .encode(Tx.build(asset, to, privateKey))
+                  .encode(tx)
                   .require
                   .toHex
               )
 
             // to be called by the miner
             case "validatetx" =>
-              ujson.Obj(
-                "ok" -> ByteVector
-                  .fromHex(params("tx").str)
-                  .map(_.toBitVector)
-                  .flatMap(Tx.codec.decode(_).toOption)
-                  .map(_.value.validate())
-                  .getOrElse(false)
-              )
+              val tx = Tx.codec
+                .decode(ByteVector.fromValidHex(params("tx").str).bits)
+                .require
+                .value
+              val others = params.obj
+                .get("others")
+                .map(
+                  _.arr.toSet.map(h =>
+                    Tx.codec
+                      .decode(ByteVector.fromValidHex(h.str).bits)
+                      .require
+                      .value
+                  )
+                )
+                .getOrElse(Set.empty)
+              ujson.Obj("hash" -> tx.hash.toHex, "ok" -> tx.validate(others))
 
             case "makeblock" =>
               Block.makeBlock(
@@ -164,6 +185,19 @@ object HttpServer {
                 .toOption match {
                 case Some(DecodeResult(block, _)) =>
                   val ok = Database.insertBlock(block.hash, block)
+
+                  if (ok) {
+                    // notify our peers that we have this block now
+                    PeerManager.sendAll(
+                      WireMessage.codec
+                        .encode(AnswerBlock(block.hash, Some(block)))
+                        .require
+                        .bytes
+                    )
+                  }
+
+                  println(s"block registered: ${block.hash}")
+
                   ujson.Obj("ok" -> ok, "hash" -> block.hash.toHex)
                 case _ =>
                   ujson.Obj("ok" -> false)

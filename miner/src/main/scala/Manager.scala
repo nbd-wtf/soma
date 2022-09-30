@@ -23,17 +23,17 @@ object Manager {
   // { invoice_hash -> waitinvoice_promise }
   val invoiceWaiters: Map[String, Set[Promise[Unit]]] = Map.empty
 
-  // { otxid -> full_otx }
+  // { txid -> full_tx }
   val idToFullTx: Map[String, ByteVector] = Map.empty
 
   // paid invoices but not settled
-  val pendingTransactions
-      : Map[String, (Promise[Boolean], ByteVector, Satoshi, BlockHeight)] =
+  val pendingTransactions: Map[String, (ByteVector, Satoshi, BlockHeight)] =
     Map.empty
+  val pendingHtlcs: Map[String, Promise[Boolean]] = Map.empty
 
   // this debouncing works both for skipping the initial burst of blocks
   //   and for giving the node time to catch up with the most recent chain
-  lazy val onBlock = Helpers.debounce(onBlock_, 10.seconds)
+  lazy val onBlock = Helpers.debounce(onBlock_, 15.seconds)
 
   def onBlock_(bitcoinHeight: Int): Future[Unit] = {
     logger.debug
@@ -48,28 +48,17 @@ object Manager {
         case Failure(err) =>
           logger.err.item(err).msg("failed to get bmm entries")
         case Success(bmms) =>
-          bmms.map { bmm =>
-            logger.debug.item("bmm", bmm).msg("got new bmm transaction")
+          logger.debug.item("bmms", bmms.size).msg("got new bmm entries")
+          bmms.foreach { bmm =>
+            logger.debug.item("bmm", bmm).msg("  ")
 
             bmm.hash match {
-              case None =>
-                logger.debug.msg("no hash on this bmm tx")
-                // if there is no hash we assume this wasn't published by us
-                //   so all our pending bitcoin transactions can be discarded
-                Publish.pendingPublishedBlocks.clear()
-
-                // but in principle our pending transactions are still valid,
-                //   so we try to publish a block again
-                if (pendingTransactions.size > 0)
-                  publishBlock().onComplete {
-                    case Success(_) =>
-                    case Failure(err) =>
-                      logger.warn.item(err).msg("failed to publish")
-                  }
+              case None => logger.debug.msg("no hash on this bmm tx")
               case Some(bmmHash)
                   if Publish.pendingPublishedBlocks.contains(bmmHash) =>
                 val block = Publish.pendingPublishedBlocks(bmmHash)
                 logger.debug
+                  .item("hash", bmmHash)
                   .item("block", block.toHex)
                   .msg(
                     "this bmm tx was published by us -- publishing our pending block"
@@ -88,23 +77,28 @@ object Manager {
                       "we couldn't get our own block we had just published?"
                     )
                   case Some(block) =>
+                    logger.debug.item(block).msg("the block we just published")
                     val txs = block("txs").arr.map(tx => tx("id").str)
-                    pendingTransactions.filterInPlace {
-                      case (id, (promise, _, _, _)) =>
-                        if (txs.contains(id)) {
-                          logger.info
-                            .item("tx", id)
-                            .msg("transaction included in a block")
-                          promise.success(true) // settle the payment
-                          false // exclude it from the list of pending
-                        } else {
-                          logger.info
-                            .item("tx", id)
-                            .msg(
-                              "transaction not included, keeping it for the next"
-                            )
-                          true // keep it in the list of pending
-                        }
+                    pendingTransactions.filterInPlace { case (id, _) =>
+                      if (txs.contains(id)) {
+                        logger.info
+                          .item("tx", id)
+                          .msg("transaction included in a block")
+
+                        // settle the payment
+                        pendingHtlcs
+                          .get(id)
+                          .map(_.success(true))
+
+                        false // exclude it from the list of pending
+                      } else {
+                        logger.info
+                          .item("tx", id)
+                          .msg(
+                            "transaction not included, keeping it for the next"
+                          )
+                        true // keep it in the list of pending
+                      }
                     }
                 }
 
@@ -118,74 +112,76 @@ object Manager {
                 logger.debug.msg(
                   "a bmm tx with a block hash from someone else"
                 )
-                // otherwise, give it a time for the block to be published,
-                Timer.timeout(5.seconds) { () =>
-                  // then
-                  //   check which of our pending transactions are still valid
-                  //   after that block and fail the lightning payments
-                  //   corresponding to the invalid ones
-                  val validations =
-                    pendingTransactions.mapValues { case (_, otx, _, _) =>
-                      Node.validateTx(otx)
-                    }
-
-                  Future.sequence(validations.values).onComplete {
-                    case Success(res) =>
-                      System.err.println(s"pending futures ${res.toList}")
-                      // if we got here we can safely assume all futures
-                      //   have completed successfully
-                      pendingTransactions
-                        .filterInPlace { case (id, (promise, _, _, _)) =>
-                          if (validations(id).value.get.getOrElse(false)) {
-                            logger.info
-                              .item("tx", id)
-                              .msg(
-                                "keeping transaction and trying again in the next block"
-                              )
-                            // this is still valid, so we
-                            true // keep it in the list
-                          } else {
-                            logger.info
-                              .item("tx", id)
-                              .msg("transaction not valid anymore, dropping it")
-                            // this isn't valid anymore, so we
-                            promise.success(false) // fail the payment
-                            false // remove it from the list
-                          }
-                        }
-                    case Failure(err) =>
-                      logger.debug
-                        .item(err)
-                        .msg(
-                          "failed to validate transactions after new block"
-                        )
-                  }
-                }
             }
 
             logger.debug.item("bmm", bmm).msg("store this as latest")
             latestSeen = bmm
 
-            // finally, fail all the transactions and cancel the lightning invoices
+            // fail all the transactions and cancel the lightning invoices
             //   if they're over their threshold bitcoin block height (we can't
             //   hold payments for too long)
-            pendingTransactions.filterInPlace {
-              case (otxid, (promise, _, _, height)) =>
-                if (height.toInt < bitcoinHeight) {
-                  // it's over the threshold, so
-                  logger.debug
-                    .item("tx", otxid)
-                    .msg(
-                      "dropping transaction since it has been here for too long"
-                    )
-                  promise.success(false) // fail the payment
-                  false // remove it from list
-                } else {
-                  // it is still ok, so
-                  true // keep it
+            pendingTransactions.filterInPlace { case (id, (_, _, height)) =>
+              if (height.toInt < bitcoinHeight) {
+                // it's over the threshold, so
+                logger.debug
+                  .item("tx", id)
+                  .msg(
+                    "dropping transaction since it has been here for too long"
+                  )
+                // fail the payment
+                pendingHtlcs
+                  .get(id)
+                  .map(_.success(false))
+                false // remove it from list
+              } else {
+                // it is still ok, so
+                true // keep it
+              }
+            }
+            Datastore.storePendingTransactions()
+
+            // give some time for the node to process the new block (if any)
+            Timer.timeout(15.seconds) { () =>
+              // then
+              //   check which of our pending transactions are still valid
+              //   after that block and fail the lightning payments
+              //   corresponding to the invalid ones
+              pendingTransactions.foreach { case (txid, (tx, _, _)) =>
+                Node.validateTx(tx).onComplete {
+                  case Success((_, ok)) if ok =>
+                    logger.info
+                      .item("tx", txid)
+                      .msg(
+                        "transaction still valid, keeping it and trying again in the next block"
+                      )
+                  case _ =>
+                    logger.info
+                      .item("tx", txid)
+                      .msg("transaction not valid anymore, dropping it")
+                    pendingHtlcs
+                      .get(txid)
+                      .map(_.success(false))
+                    pendingTransactions.remove(txid)
+                    Datastore.storePendingTransactions()
                 }
+              }
             }
           }
+
+          // after we've gone through all the latest bmms
+          //   in principle our pending transactions are still valid,
+          //   so we try to publish a block again
+          if (pendingTransactions.size > 0)
+            logger.debug
+              .item("pending", pendingTransactions)
+              .msg(
+                "we still have pending transactions, try to publish a new block"
+              )
+            publishBlock().onComplete {
+              case Success(_) =>
+              case Failure(err) =>
+                logger.warn.item(err).msg("failed to publish")
+            }
       }
 
     Future {}
@@ -219,46 +215,87 @@ object Manager {
 
           val fee = MilliSatoshi(invoice("msatoshi").num.toLong)
 
-          // parse the otxid from the invoice description and get the full tx from our cache
-          val otxid = invoice("description").str
+          // parse the txid from the invoice description and get the full tx from our cache
+          val txid = invoice("description").str
             .dropWhile(_ != '<')
             .drop(1)
             .takeWhile(_ != '>')
 
-          idToFullTx.get(otxid) match {
+          idToFullTx.get(txid) match {
             case None =>
-              // TODO we should actually be persisting our pending transactions to disk at all times
-              //      otherwise we risk losing funds
-              logger.warn.msg("we don't know about this, discard the payment")
-              promise.success(false)
+              // we don't know about this invoice, but what if this is an HTLC being replayed by lightningd on us?
+              pendingTransactions.get(txid) match {
+                case Some(_) =>
+                  // we must keep track of this htlc, although we have already processed this transaction
+                  //   so don't do anything else
+                  pendingHtlcs += txid -> promise
+                case None =>
+                  // yeah, we really don't know what this is
+                  logger.warn.msg("unknown htlc, discarding")
+                  promise.success(false)
+              }
 
-            case Some(otx) =>
+            case Some(tx) =>
               val operation = for {
                 currentBitcoinBlock <- rpc("getchaininfo")
                   .map(_("headercount").num.toLong)
                   .map(BlockHeight(_))
 
                 // check if this same transaction was already here and cancel it
-                _ = pendingTransactions.get(otxid).foreach {
-                  case (p, _, _, _) =>
-                    p.success(false)
+                //   (i.e. they're just increasing the fee paid)
+                _ = pendingHtlcs.get(txid).foreach { p =>
+                  pendingHtlcs.remove(txid)
+                  p.success(false)
                 }
+
+                // check if this is valid
+                (_, ok) <- Node.validateTx(
+                  tx,
+                  pendingTransactions
+                    // filter out this same one (in case it's a replacement)
+                    .filter((id, _) => id != txid)
+                    .values
+                    .map((v, _, _) => v)
+                    .toSet
+                )
+
+                _ = require(ok, "transaction is not valid anymore")
 
                 // add this new one
                 _ = {
-                  logger.debug.item("txid", otxid).msg("adding new pending tx")
-
+                  logger.debug.item("txid", txid).msg("adding new pending tx")
+                  pendingHtlcs += (txid -> promise)
                   pendingTransactions +=
-                    (otxid -> (promise, otx, fee.truncateToSatoshi, currentBitcoinBlock + 104))
+                    (txid -> (tx, fee.truncateToSatoshi, currentBitcoinBlock + 104))
+                  Datastore.storePendingTransactions()
                 }
 
                 _ <- publishBlock()
               } yield ()
 
               operation.onComplete {
+                case Failure(err)
+                    if err
+                      .toString()
+                      .contains("bad-txns-inputs-missingorspent") ||
+                      err
+                        .toString()
+                        .contains("insufficient fee, rejecting replacement") =>
+                  logger.debug
+                    .item(err)
+                    .msg("failed to publish bmm hash, but will try again later")
+
                 case Failure(err) =>
-                  logger.warn.item(err).msg("failed to publish bmm hash")
+                  logger.warn
+                    .item(err)
+                    .item("txid", txid)
+                    .msg(
+                      "failed to publish bmm hash, rejecting this transaction"
+                    )
+                  pendingTransactions.remove(txid)
+                  Datastore.storePendingTransactions()
                   promise.failure(err)
+
                 case Success(_) =>
               }
           }
@@ -269,40 +306,43 @@ object Manager {
 
   def publishBlock(): Future[Unit] = for {
     // get the block to publish containing all our pending txs from the node
-    (bmmhash, oblock) <- Node.getNextBlock(
-      pendingTransactions.map(_._2._2).toList
+    (bmmhash, block) <- Node.getNextBlock(
+      pendingTransactions.values.map((tx, _, _) => tx).toList
     )
 
     // republish block bmm tx
-    txid <- Publish.publishBmmHash(bmmhash, oblock, totalFees)
+    bmmTxid <- Publish.publishBmmHash(bmmhash, block, totalFees)
 
-    _ = logger.debug.item("bitcoin-txid", txid).msg("published bmm hash")
+    _ = logger.debug.item("bmm-txid", bmmTxid).msg("published bmm hash")
   } yield ()
 
   def makeInvoiceForTransaction(
-      otx: ByteVector,
+      tx: ByteVector,
       amount: Satoshi
   ): Future[(String, String)] =
     for {
-      ok <- Node.validateTx(otx)
-      _ = require(ok, "transaction is not valid")
-      otxid = Crypto.sha256(otx.dropRight(32)).toHex
+      (txid, isValid) <- Node.validateTx(
+        tx,
+        pendingTransactions.values.map((tx, _, _) => tx).toSet
+      )
+      isReplacement = pendingTransactions.contains(txid)
+      _ = require(isValid || isReplacement, "transaction is not valid")
       inv <- rpc(
         "invoice",
         ujson.Obj(
           "amount_msat" -> amount.toMilliSatoshi.toLong,
-          "label" -> s"miner:${otxid.take(6)}#${Crypto.randomBytes(3).toHex}",
-          "description" -> s"publish <${otxid}>",
+          "label" -> s"miner:${txid.take(6)}#${Crypto.randomBytes(3).toHex}",
+          "description" -> s"publish <${txid}>",
           "cltv" -> 144
         )
       )
       bolt11 = inv("bolt11").str
       hash = inv("payment_hash").str
     } yield {
-      idToFullTx += (otxid -> otx)
+      idToFullTx += (txid -> tx)
       (bolt11, hash)
     }
 
   def totalFees: Satoshi =
-    pendingTransactions.map(_._2._3).fold(Satoshi(0))(_ + _)
+    pendingTransactions.values.map((_, fees, _) => fees).sum
 }

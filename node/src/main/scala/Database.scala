@@ -18,7 +18,7 @@ object Database {
       "CREATE TABLE IF NOT EXISTS blocks (bmmheight INT UNIQUE NOT NULL, txid TEXT UNIQUE NOT NULL, bmmhash BLOB, block BLOB, blockheight INT)"
     )
     db.exec(
-      "CREATE TABLE IF NOT EXISTS current (k TEXT PRIMARY KEY, blockheight INT NOT NULL, bmmhash BLOB NOT NULL REFERENCES blocks (bmmhash))"
+      "CREATE TABLE IF NOT EXISTS current (k TEXT PRIMARY KEY, blockheight INT NOT NULL, bmmhash BLOB NOT NULL)"
     )
     db.exec(
       "CREATE TABLE IF NOT EXISTS state (asset BLOB PRIMARY KEY, owner BLOB NOT NULL, counter INT NOT NULL)"
@@ -218,14 +218,14 @@ object Database {
     .map(_.selectDynamic("blockheight").asInstanceOf[Double].toInt)
 
   private lazy val getLatestKnownBlockStmt = db.prepare(
-    "SELECT bmmheight, block FROM blocks WHERE block IS NOT NULL ORDER BY blockheight DESC LIMIT 1"
+    "SELECT blockheight, block FROM blocks WHERE block IS NOT NULL ORDER BY blockheight DESC LIMIT 1"
   )
   def getLatestKnownBlock(): Option[(Int, Block)] = getLatestKnownBlockStmt
     .get()
     .toOption
     .map { row =>
       (
-        row.selectDynamic("bmmheight").asInstanceOf[Double].toInt,
+        row.selectDynamic("blockheight").asInstanceOf[Double].toInt,
         row
           .selectDynamic("block")
           .asInstanceOf[Uint8Array]
@@ -266,14 +266,39 @@ object Database {
   private lazy val getAccountAssetsStmt = db.prepare(
     "SELECT asset FROM state WHERE owner = ?"
   )
-  def getAccountAssets(pubkey: Crypto.XOnlyPublicKey): List[ByteVector] =
+  def getAccountAssets(pubkey: Crypto.XOnlyPublicKey): List[ByteVector32] =
     getAccountAssetsStmt
       .all(pubkey)
       .toList
       .map(row =>
-        ByteVector
-          .fromUint8Array(row.selectDynamic("asset").asInstanceOf[Uint8Array])
+        ByteVector32(
+          ByteVector
+            .fromUint8Array(row.selectDynamic("asset").asInstanceOf[Uint8Array])
+        )
       )
+
+  private lazy val listAllAssetsStmt =
+    db.prepare("SELECT asset, owner FROM state")
+  def listAllAssets(): List[(ByteVector32, Crypto.XOnlyPublicKey)] =
+    listAllAssetsStmt
+      .all()
+      .map(row =>
+        (
+          ByteVector32(
+            ByteVector.fromUint8Array(
+              row.selectDynamic("asset").asInstanceOf[Uint8Array]
+            )
+          ),
+          Crypto.XOnlyPublicKey(
+            ByteVector32(
+              ByteVector.fromUint8Array(
+                row.selectDynamic("owner").asInstanceOf[Uint8Array]
+              )
+            )
+          )
+        )
+      )
+      .toList
 
   private lazy val getAssetOwnerStmt = db.prepare(
     "SELECT owner FROM state WHERE asset = ?"

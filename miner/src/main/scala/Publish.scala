@@ -1,3 +1,4 @@
+import scala.util.Success
 import scala.collection.mutable.Map
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -5,7 +6,6 @@ import scala.Ordering.Implicits._
 import scala.util.chaining._
 import scodec.bits.ByteVector
 import com.github.lolgab.httpclient.{Request, Method}
-import ujson._
 import scoin._
 
 object Publish {
@@ -36,8 +36,8 @@ object Publish {
     } yield {
       val outputs = listfunds("outputs").arr
         .filter(utxo =>
-          utxo("status").str == "confirmed" &&
-            utxo("reserved").bool == false
+          utxo("status").str == "confirmed"
+          // && utxo("reserved").bool == false
         )
       val nextPsbt = overseerResponse
         .pipe(_.body)
@@ -58,9 +58,8 @@ object Publish {
         .map(utxo =>
           MilliSatoshi(
             utxo("amount_msat").numOpt
-              .map(_.toInt)
-              .getOrElse(utxo("amount_msat").str.takeWhile(_.isDigit).toInt)
-              .toLong
+              .map(_.toLong)
+              .getOrElse(utxo("amount_msat").str.takeWhile(_.isDigit).toLong)
           ).toSatoshi
         )
         .sum
@@ -127,6 +126,11 @@ object Publish {
       signedPsbt <- rpc("signpsbt", ujson.Obj("psbt" -> psbt))
         .map(_("signed_psbt").str)
       _ = logger.debug.item("signed", signedPsbt).msg("")
+
+      // save these as an attempted tx-block publish
+      _ = { pendingPublishedBlocks += (blockHash -> block) }
+      _ <- Datastore.storePendingBlocks()
+
       res <- rpc("sendpsbt", ujson.Obj("psbt" -> signedPsbt))
       _ = logger.debug.item("res", res).msg("")
     } yield {
@@ -135,9 +139,6 @@ object Publish {
         .item("bmm-hash", blockHash.toHex)
         .item("bitcoin-txid", txid)
         .msg("published bmm tx")
-
-      // save these as an attempted tx-block publish
-      pendingPublishedBlocks += (blockHash -> block)
 
       txid
     }

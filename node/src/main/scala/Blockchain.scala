@@ -21,19 +21,29 @@ object Block {
     (("header" | BlockHeader.codec) ::
       ("txs" | list(Tx.codec))).as[Block]
 
-  given ReadWriter[Block] = macroRW
+  given ReadWriter[Block] = ReadWriter.join(
+    macroR,
+    writer[ujson.Value].comap[Block](b =>
+      ujson.Obj(
+        "id" -> writeJs(b.hash),
+        "header" -> writeJs(b.header),
+        "txs" -> writeJs(b.txs)
+      )
+    )
+  )
 
   def makeBlock(
       txs: Seq[Tx],
       parent: Option[ByteVector32] = None
   ): Either[String, Block] =
-    if (Tx.validateTxs(txs.toSet)) Left("one or more transactions are invalid")
+    if (!Tx.validateTxs(txs.toSet))
+      Left("one or more of the transaction is invalid")
     else {
       val previous = parent
         .orElse(
           Database
             .getLatestKnownBlock()
-            .map { case (_, block) => block.header.previous }
+            .map { case (_, block) => block.hash }
         )
         .getOrElse(ByteVector32.Zeroes) // default to 32 zeroes
       val block = Block(
@@ -91,19 +101,18 @@ case class Tx(
   def signatureValid(): Boolean =
     Crypto.verifySignatureSchnorr(Crypto.sha256(messageToSign), signature, from)
 
-  def validate(pendingTxs: Set[Tx] = Set.empty): Boolean =
-    // check signature
-    signatureValid() &&
-      // check if this asset really belongs to this person
-      (Database.verifyAssetOwnerAndCounter(
-        asset,
-        from,
-        counter - 1
-      ) ||
-        // or it's a new asset they are creating
-        (counter == 1 && Database.verifyAssetDoesntExist(asset))) &&
-      // and also this same asset can't be moving in this same block
-      !pendingTxs.exists(tx => tx.asset == this.asset)
+  def validate(otherTxsInTheBlock: Set[Tx] = Set.empty): Boolean = {
+    val ownerCorrect = Database.verifyAssetOwnerAndCounter(
+      asset,
+      from,
+      counter
+    )
+    val isNewAsset = counter == 1 && Database.verifyAssetDoesntExist(asset)
+    val assetNotBeingTransactedAlready =
+      !otherTxsInTheBlock.exists(tx => tx.asset == this.asset)
+
+    (ownerCorrect || isNewAsset) && assetNotBeingTransactedAlready && signatureValid()
+  }
 }
 
 object Tx {
@@ -140,7 +149,8 @@ object Tx {
   ).withSignature(privateKey)
 
   def merkleRoot(txs: Seq[Tx]): ByteVector32 =
-    txs.map(_.hash).pipe(merkle(_))
+    if txs.size == 0 then ByteVector32.Zeroes
+    else txs.map(_.hash).pipe(merkle(_))
 
   def merkle(hashes: Seq[ByteVector32]): ByteVector32 =
     if hashes.size == 1 then hashes(0)

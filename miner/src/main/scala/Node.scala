@@ -50,9 +50,15 @@ object Node {
         )
       )
 
-  def validateTx(tx: ByteVector): Future[Boolean] =
-    call("validatetx", ujson.Obj("tx" -> tx.toHex))
-      .map(_("ok").bool)
+  def validateTx(
+      tx: ByteVector,
+      others: Set[ByteVector] = Set.empty
+  ): Future[(String, Boolean)] =
+    call(
+      "validatetx",
+      ujson.Obj("tx" -> tx.toHex, "others" -> others.map(_.toHex))
+    )
+      .map(res => (res("hash").str, res("ok").bool))
 
   def getBmmSince(bmmHeight: Int): Future[List[Bmm]] =
     call("getbmmsince", ujson.Obj("bmmheight" -> bmmHeight))

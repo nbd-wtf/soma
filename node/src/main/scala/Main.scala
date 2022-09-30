@@ -1,9 +1,10 @@
-import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
-import util.chaining.scalaUtilChainingOps
+import scala.util.chaining._
 import scala.concurrent.Future
+import scala.util.{Success, Failure}
 import scala.scalajs.js
 import scala.scalajs.js.annotation.JSImport
 import scala.scalajs.js.typedarray.Uint8Array
+import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
 import scodec.bits.ByteVector
 import scodec.{Attempt, DecodeResult}
 import scoin.ByteVector32
@@ -113,19 +114,24 @@ object BitcoinManager {
     val (txid, bmmHeight, bmmHash) =
       Database.getLatestTx().getOrElse((Config.genesisTx, 1, None))
 
-    for {
+    (for {
       tipTx <- BitcoinRPC.call(
         "getrawtransaction",
         ujson.Arr(txid, 2)
       )
       btcBlock <- BitcoinRPC.call("getblock", ujson.Arr(tipTx("blockhash").str))
     } yield {
+      println(s"starting scan from ${tipTx("txid").str}")
       Database.addTx(bmmHeight, tipTx("txid").str, getBmmHash(tipTx.obj))
       inspectNextBlocks(
         bmmHeight + 1,
         tipTx("txid").str,
         btcBlock("height").num.toInt + 1
       )
+    }).onComplete {
+      case Success(_) =>
+      case Failure(err) =>
+        println(s"failed to get genesis transaction: $err")
     }
   }
 
@@ -149,7 +155,7 @@ object BitcoinManager {
             inspectNextBlocks(bmmHeight, tipTxid, height)
           }
         } else {
-          // print(s"inspecting bitcoin block $height... ")
+          println(s"inspecting bitcoin block $height for bmm $bmmHeight... ")
           BitcoinRPC
             .call("getblockhash", ujson.Arr(height))
             .map(_.str)
@@ -159,10 +165,13 @@ object BitcoinManager {
             .foreach { block =>
               block("tx").arr
                 .drop(1) // drop coinbase
-                .find(
-                  _("vin")(0).pipe(fvin =>
-                    fvin("txid").str == tipTxid && fvin("vout").num == 0
-                  )
+                .find(tx =>
+                  tx("vin")(0).pipe(fvin =>
+                    fvin("txid").str == tipTxid &&
+                      // at the bmm transaction that spends from genesis the output
+                      //   may be at any index; but after that it will always be the first
+                      (if bmmHeight == 2 then true else fvin("vout").num == 0)
+                  ) && tx("vout")(0)("value").num == 0.00000738
                 ) match {
                 case Some(foundTx) =>
                   val txid = foundTx("txid").str
