@@ -246,8 +246,6 @@ object StateManager {
             processBlocksFrom(highestHeight + 1, blocks.last.hash)
         }
       case None =>
-        println(s"no block at $height")
-        println(s"  waiting a little before trying again")
         js.timers.setTimeout(60000) {
           processBlocksFrom(height, bmmHash)
         }

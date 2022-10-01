@@ -61,12 +61,12 @@ object Manager {
                   .item("hash", bmmHash)
                   .item("block", block.toHex)
                   .msg(
-                    "this bmm tx was published by us -- publishing our pending block"
+                    "this bmm tx was published by us -- registering our pending block"
                   )
-                val publish = for {
-                  // publish the corresponding block
+                val register = for {
+                  // register the corresponding block at the node
                   res <- Node.registerBlock(block)
-                  _ = logger.debug.item("ok", res("ok").bool).msg("published")
+                  _ = logger.debug.item("ok", res("ok").bool).msg("registered")
 
                   //   check which of our pending transactions were
                   //   included and settle the corresponding lightning invoices
@@ -74,10 +74,10 @@ object Manager {
                 } yield blockOpt match {
                   case None =>
                     throw new Exception(
-                      "we couldn't get our own block we had just published?"
+                      "we couldn't get our own block we had just registered?"
                     )
                   case Some(block) =>
-                    logger.debug.item(block).msg("the block we just published")
+                    logger.debug.item(block).msg("the block we just registered")
                     val txs = block("txs").arr.map(tx => tx("id").str)
                     pendingTransactions.filterInPlace { case (id, _) =>
                       if (txs.contains(id)) {
@@ -102,10 +102,10 @@ object Manager {
                     }
                 }
 
-                publish.onComplete {
+                register.onComplete {
                   case Success(_) =>
                   case Failure(err) =>
-                    logger.err.item(err).msg("failed to publish our own block")
+                    logger.err.item(err).msg("failed to register our own block")
 
                 }
               case Some(bmmHash) =>
@@ -165,23 +165,23 @@ object Manager {
                     Datastore.storePendingTransactions()
                 }
               }
-            }
-          }
 
-          // after we've gone through all the latest bmms
-          //   in principle our pending transactions are still valid,
-          //   so we try to publish a block again
-          if (pendingTransactions.size > 0)
-            logger.debug
-              .item("pending", pendingTransactions)
-              .msg(
-                "we still have pending transactions, try to publish a new block"
-              )
+            // after we've gone through all the latest bmms
+            //   in principle our pending transactions are still valid,
+            //   so we try to publish a block again
+            if (pendingTransactions.size > 0)
+              logger.debug
+                .item("pending", pendingTransactions)
+                .msg(
+                  "we still have pending transactions, try to publish a new block"
+                )
             publishBlock().onComplete {
               case Success(_) =>
               case Failure(err) =>
                 logger.warn.item(err).msg("failed to publish")
             }
+            }
+          }
       }
 
     Future {}
