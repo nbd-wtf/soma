@@ -3,6 +3,8 @@ package main
 import (
 	_ "embed"
 	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -13,8 +15,8 @@ import (
 	"github.com/webview/webview"
 )
 
-//go:embed index.html
-var index string
+//go:embed app.html
+var html string
 
 //go:embed target/esbuild/bundle.js
 var script []byte
@@ -30,7 +32,7 @@ var (
 func main() {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", "text/html")
-		w.Write([]byte(index))
+		w.Write([]byte(html))
 	})
 	http.HandleFunc("/bundle.js", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", "application/javascript")
@@ -46,29 +48,12 @@ func main() {
 	defer w.Destroy()
 	w.SetTitle("openchain wallet")
 	w.SetSize(1024, 768, webview.HintMin)
-	w.Bind("commando", commando)
 	w.Bind("storeKey", storeKey)
 	w.Bind("loadKey", loadKey)
-	w.SetHtml(index)
+	w.Bind("commando", commando)
+	w.Bind("getMiners", getMiners)
+	w.SetHtml(html)
 	w.Run()
-}
-
-func commando(nodeid string, host string, rune string, method string, params string) string {
-	ln := lnsocket.LNSocket{}
-	ln.GenKey()
-
-	err := ln.ConnectAndInit(host, nodeid)
-	if err != nil {
-		return `{"error": "failed to connect to node"}`
-	}
-	defer ln.Disconnect()
-
-	body, err := ln.Rpc(rune, "invoice", params)
-	if err != nil {
-		return `{"error": "failed to call commando"}`
-	}
-
-	return body
 }
 
 func storeKey(key string) {
@@ -88,4 +73,51 @@ func loadKey() string {
 		return ""
 	}
 	return hex.EncodeToString(b)
+}
+
+func commando(nodeid string, host string, rune string, method string, params string) string {
+	ln := lnsocket.LNSocket{}
+	ln.GenKey()
+
+	err := ln.ConnectAndInit(host, nodeid)
+	if err != nil {
+		return `{"error": "failed to connect to node"}`
+	}
+	defer ln.Disconnect()
+
+	fmt.Println("calling", method, params)
+	body, err := ln.Rpc(rune, method, params)
+	if err != nil {
+		return `{"error": "failed to call commando"}`
+	}
+
+	return body
+}
+
+func getMiners() string {
+	j, _ := json.Marshal([]struct {
+		Pubkey  string `json:"pubkey"`
+		Address string `json:"address"`
+		Rune    string `json:"rune"`
+	}{
+		// signet
+		// {
+		//   Pubkey: "02855372fc5d61dfbe939aa04edb662beccc314d693d6ed65a92293137e9cf657b",
+		//   Address: "ws://127.0.0.1:9739",
+		//   Rune: "tG5ixNeDcl2FxhY6Abi7jL_BauD-Ss1f-XfX0zKNNGg9MCZtZXRob2Reb3BlbmNoYWluLQ=="
+		// }
+
+		// regtest
+		{
+			Pubkey:  "021b7a3a371b81f2f94a1998d76e5d28598d942003290f078e34bf335d2d28642a",
+			Address: "127.0.0.1:9730",
+			Rune:    "NxuE4lr_ywfDrSSjRR-a8SFBBkRXTssSXpCPnD3U6t09MSZtZXRob2Reb3BlbmNoYWluLQ==",
+		},
+		{
+			Pubkey:  "03786e2997686741ce9cd55c0344b7f5a6f1bc53a1b078740a25fbbb92586dbcc6",
+			Address: "127.0.0.1:9732",
+			Rune:    "hd6Q5vvUO6ex68JcIPh2NG8jTKjYs9xYDOeRbK_b82w9MCZtZXRob2Reb3BlbmNoYWluLQ==",
+		},
+	})
+	return string(j)
 }

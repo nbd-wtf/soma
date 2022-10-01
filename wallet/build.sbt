@@ -12,6 +12,7 @@ libraryDependencies ++= Seq(
   "org.scala-js" %%% "scala-js-macrotask-executor" % "1.1.0",
   "com.softwaremill.sttp.client3" %%% "core" % "3.8.0",
   "com.raquo" %%% "laminar" % "0.14.5",
+  "com.fiatjaf" %%% "scoin" % "0.3.0",
 
   // use these until everybody updates to scala-3.2.0
   "org.typelevel" %%% "cats-core" % "2.9-826466b-SNAPSHOT",
@@ -21,9 +22,7 @@ Compile / npmDependencies ++= Seq(
   "kjua" -> "0.9.0"
 )
 
-esbuildOptions ++= Seq(
-  "--target=es6"
-)
+esbuildOptions ++= Seq()
 esPackageManager := Yarn
 
 scalaJSLinkerConfig ~= { _.withModuleKind(ModuleKind.CommonJSModule) }

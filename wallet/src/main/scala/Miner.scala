@@ -1,14 +1,17 @@
 import scala.util.{Success, Failure}
 import scala.util.chaining._
 import scala.concurrent.duration._
+import scala.concurrent.Future
 import scala.scalajs.js
 import org.scalajs.dom
 import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
 import com.raquo.laminar.api.L._
+import io.circe._
 import io.circe.syntax._
+import io.circe.parser._
 import io.circe.generic.auto._
 
-class Miner(pubkey: String, address: String, rune: String) {
+case class Miner(pubkey: String, address: String, rune: String) {
   val commando = new Commando(pubkey, address, rune)
 
   val status: Signal[MinerStatus] = EventStream
@@ -17,7 +20,7 @@ class Miner(pubkey: String, address: String, rune: String) {
     .map(_.as[MinerStatus].toOption.get)
     .toSignal(MinerStatus.empty)
   val showInvoice: Var[Option[MinerInvoice]] = Var(None)
-  val nextTx: Var[String] = Var("")
+  val nextTx: Var[Option[String]] = Var(None)
   val nextFee: Var[Int] = Var(0)
   val invoicePaid = showInvoice.signal.changes
     .collect { case Some(mi) => mi.hash }
@@ -33,6 +36,11 @@ class Miner(pubkey: String, address: String, rune: String) {
   def render(): HtmlElement =
     div(
       cls := "mr-3 py-3 px-4 my-3 bg-sky-600 text-white rounded-md shadow-lg w-auto max-w-xs",
+      div(
+        cls := "py-2",
+        cls := "text-xl text-bold",
+        "Miner"
+      ),
       div(
         cls := "py-2",
         div(cls := "text-xl text-ellipsis overflow-hidden", pubkey),
@@ -79,15 +87,17 @@ class Miner(pubkey: String, address: String, rune: String) {
                 .rpc(
                   "openchain-invoice",
                   Map(
-                    "tx" -> nextTx.now().asJson,
+                    "tx" -> nextTx.now().get.asJson,
                     "msatoshi" -> nextFee.now().asJson
                   )
                 )
+                .map(_.tap(println(_)))
                 .map(_.as[MinerInvoice].toOption.get)
                 .onComplete {
                   case Success(inv) =>
                     println(s"got invoice from miner: $inv")
                     showInvoice.set(Some(inv))
+                    nextTx.set(None)
                   case Failure(err) =>
                     println(s"error getting invoice from miner: $err")
                 }
@@ -97,7 +107,10 @@ class Miner(pubkey: String, address: String, rune: String) {
               "tx: ",
               textArea(
                 cls := "block text-black px-1 h-64 w-full",
-                onInput.mapToValue.setAsValue --> nextTx.writer
+                controlled(
+                  value <-- nextTx.signal.map(_.getOrElse("")),
+                  onInput.mapToValue.map(Some(_)) --> nextTx.writer
+                )
               )
             ),
             label(
@@ -109,11 +122,51 @@ class Miner(pubkey: String, address: String, rune: String) {
                   .contramap[String](_.toIntOption.map(_ * 1000).getOrElse(0))
               )
             ),
-            button(
-              cls := "p-1 pb-2 mt-2 bg-white text-black rounded-md shadow-lg",
-              "publish"
+            div(
+              cls := "mt-1 flex justify-end",
+              button(
+                cls := "p-1 pb-2 mt-2 bg-white text-black rounded-md shadow-lg",
+                disabled <-- Signal
+                  .combine(nextTx.signal, nextFee.signal)
+                  .map(_.isEmpty && _ > 0),
+                "Publish"
+              )
             )
           )
       }
     )
 }
+
+object Miner {
+  def getMiners(): Future[List[Miner]] =
+    js.Dynamic.global
+      .getMiners()
+      .asInstanceOf[js.Promise[String]]
+      .toFuture
+      .map(parse(_).toOption.get)
+      .map(_.as[List[Miner]].toOption.get)
+}
+
+case class MinerStatus(
+    pendingTxs: Int,
+    accFees: Int
+)
+
+object MinerStatus {
+  given Decoder[MinerStatus] = new Decoder[MinerStatus] {
+    final def apply(c: HCursor): Decoder.Result[MinerStatus] =
+      for {
+        pendingTxs <- c.downField("pending_txs").as[Int]
+        accFees <- c.downField("acc_fees").as[Int]
+      } yield {
+        MinerStatus(pendingTxs, accFees)
+      }
+  }
+
+  def empty = MinerStatus(0, 0)
+}
+
+case class MinerInvoice(
+    invoice: String,
+    hash: String
+)

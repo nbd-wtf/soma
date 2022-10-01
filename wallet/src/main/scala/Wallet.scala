@@ -1,22 +1,24 @@
 import scala.concurrent.Future
+import scala.util.{Success, Failure}
 import scala.scalajs.js
 import org.scalajs.dom
 import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
+import scodec.bits.ByteVector
 import com.raquo.laminar.api.L._
 import sttp.client3._
 import io.circe._
 import io.circe.syntax._
 import io.circe.parser._
+import scoin._
 
 object Wallet {
-  val info: Signal[NodeInfo] = EventStream
-    .periodic(10000)
-    .flatMap(_ => EventStream.fromFuture(getInfo()))
-    .toSignal(NodeInfo.empty)
-
   val assets = EventStream
-    .combine(info.changes, PrivateKey.key.changes)
-    .flatMap((info, key) => EventStream.fromFuture(getAssets(key)))
+    .combine(Main.info.changes, Keys.pubkey)
+    .flatMap((info, pk) => EventStream.fromFuture(Node.getAssets(pk)))
+
+  val mintingAsset: Var[Option[ByteVector32]] = Var(
+    Some(ByteVector32(Crypto.randomBytes(32)))
+  )
 
   def render(): HtmlElement =
     div(
@@ -30,41 +32,74 @@ object Wallet {
         cls := "mb-3",
         div(
           b("assets:"),
-          children <-- assets.map(_.map(renderAsset(_)))
+          code("["),
+          children <-- assets.map(_.map(renderAsset(_))),
+          code("]")
+        ),
+        child <-- Main.txToMine.signal.map {
+          case Some(tx) =>
+            div(
+              b("generated tx:"),
+              div(
+                cls := "p-2 whitespace-pre-wrap break-all",
+                code(tx)
+              )
+            )
+          case None => div()
+        }
+      ),
+      form(
+        onSubmit.preventDefault --> { _ =>
+          {
+            for {
+              asset <- mintingAsset.tryNow()
+              pk <- Keys.pubkey.value.get
+              sk <- Keys.privkey.value.get
+            } yield {
+              Node
+                .buildTx(asset.get, ByteVector32(pk.value.drop(1)), sk)
+                .onComplete {
+                  case Success(v) =>
+                    Main.txToMine.set(Some(v.tx))
+                    mintingAsset.set(None)
+                  case Failure(err) => println(s"fail to build tx: $err")
+                }
+            }
+          }
+        },
+        label(
+          cls := "block",
+          "asset id: ",
+          input(
+            cls := "block text-black px-1 w-full",
+            defaultValue := mintingAsset.now().get.toHex,
+            onInput.mapToValue.setAsValue
+              .map[Option[ByteVector32]](hex =>
+                ByteVector
+                  .fromHex(hex)
+                  .flatMap(b =>
+                    if b.size == 32 then Some(ByteVector32(b)) else None
+                  )
+              )
+              --> mintingAsset.writer
+          )
+        ),
+        div(
+          cls := "mt-1 flex justify-end",
+          button(
+            cls := "p-1 pb-2 mt-2 bg-white text-black rounded-md shadow-lg",
+            disabled <-- mintingAsset.signal.map(_.isEmpty),
+            "Mint"
+          )
         )
       )
     )
 
   def renderAsset(asset: String): HtmlElement =
-    div(
+    code(
+      cls := "block ml-2",
       "\"",
-      code(cls := "text-teal-300", asset),
+      span(cls := "text-teal-300", asset),
       "\""
     )
-
-  def getInfo(): Future[NodeInfo] =
-    call("info").map(_.as[NodeInfo].toOption.get)
-
-  def getAssets(key: String): Future[List[String]] =
-    call("getaccountassets", Map("privkey" -> key.asJson))
-      .map(_.as[List[String]].toOption.get)
-
-  // ---
-  val backend = FetchBackend()
-  def call(
-      method: String,
-      params: Map[String, Json] = Map.empty
-  ): Future[io.circe.Json] =
-    basicRequest
-      .post(uri"http://127.0.0.1:9036")
-      .body(
-        Map[String, Json](
-          "method" -> method.asJson,
-          "params" -> params.asJson
-        ).asJson.toString
-      )
-      .send(backend)
-      .map(_.body.toOption.get)
-      .map(parse(_).toOption.get)
-      .map(_.hcursor.downField("result").as[Json].toOption.get)
 }

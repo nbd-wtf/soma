@@ -3,4 +3,54 @@
 <script src="https://cdn.tailwindcss.com"></script>
 <body class="bg-stone-300 m-0">
 <main id="main" />
-<script src=http://localhost:43234/bundle.js></script>
+<script src="https://unpkg.com/lnsocket@0.3.2/dist/js/lnsocket.js"></script>
+<script>
+let lnsocket = lnsocket_init().then(LNSocket => {
+  const ln = LNSocket()
+  ln.genkey()
+  return ln
+})
+
+async function commando(nodeId, host, rune, method, paramsJSON) {
+  try {
+    const ln = await lnsocket
+    console.log('CONNECTING TO', nodeId, host)
+    await ln.connect_and_init(nodeId, host)
+    console.log('CALLING WITH', method, rune, paramsJSON)
+    const res = await ln.rpc({ method, rune, params: JSON.stringify(paramsJSON) })
+    console.log('GOT RESPONSE', res)
+    return JSON.stringify(res)
+  } catch (err) {
+    console.log('ERR', err)
+  }
+}
+async function getMiners() {
+  return JSON.stringify([
+    // signet
+    // {
+    //   pubkey: "02855372fc5d61dfbe939aa04edb662beccc314d693d6ed65a92293137e9cf657b",
+    //   address: "ws://127.0.0.1:9739",
+    //   rune: "tG5ixNeDcl2FxhY6Abi7jL_BauD-Ss1f-XfX0zKNNGg9MCZtZXRob2Reb3BlbmNoYWluLQ=="
+    // }
+
+    // regtest
+    {
+      pubkey: "021b7a3a371b81f2f94a1998d76e5d28598d942003290f078e34bf335d2d28642a",
+      address: "ws://127.0.0.1:9738",
+      rune: "NxuE4lr_ywfDrSSjRR-a8SFBBkRXTssSXpCPnD3U6t09MSZtZXRob2Reb3BlbmNoYWluLQ=="
+    },
+    {
+      pubkey: "03786e2997686741ce9cd55c0344b7f5a6f1bc53a1b078740a25fbbb92586dbcc6",
+      address: "ws://127.0.0.1:9739",
+      rune: "hd6Q5vvUO6ex68JcIPh2NG8jTKjYs9xYDOeRbK_b82w9MCZtZXRob2Reb3BlbmNoYWluLQ=="
+    }
+  ])
+}
+async function storeKey (key) {
+  localStorage.setItem("openchain:key", key)
+}
+async function loadKey () {
+  return localStorage.getItem("openchain:key") || ""
+}
+</script>
+<script src=/target/esbuild/bundle.js></script>
