@@ -1,4 +1,4 @@
-import scala.util.Success
+import scala.util.{Success, Failure}
 import scala.collection.mutable.Map
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -24,7 +24,7 @@ object Publish {
     logger.info
       .item("bmm-hash", blockHash.toHex)
       .item("fee", fee)
-      .msg("publishing bmm block")
+      .msg("publishing bmm block!")
 
     val finalPsbt = for {
       listfunds <- rpc("listfunds")
@@ -112,7 +112,7 @@ object Publish {
         .pipe(Psbt.toBase64(_))
     }
 
-    for {
+    val done = for {
       psbt <- finalPsbt
       _ = logger.debug.item("psbt", psbt).msg("")
       _ <- rpc(
@@ -141,6 +141,12 @@ object Publish {
         .msg("published bmm tx")
 
       txid
+    }
+
+    done.andThen {
+      case Failure(err) =>
+        logger.err.item(err).msg("failed to publish bitcoin tx")
+      case Success(_) =>
     }
   }
 }

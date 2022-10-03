@@ -71,7 +71,7 @@ func processBlock(blockHeight uint64, blockHex string) error {
 				// so just save it
 				if _, err := txn.Exec(
 					"INSERT INTO chain_block_tx (idx, txid) VALUES ($1, $2)",
-					index+1, tx.Hash().String(),
+					index, tx.Hash().String(),
 				); err != nil {
 					if strings.HasPrefix(err.Error(), "constraint failed: UNIQUE constraint") {
 						// no problem, just skip

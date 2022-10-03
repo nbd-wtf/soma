@@ -166,20 +166,21 @@ object Manager {
                 }
               }
 
-            // after we've gone through all the latest bmms
-            //   in principle our pending transactions are still valid,
-            //   so we try to publish a block again
-            if (pendingTransactions.size > 0)
-              logger.debug
-                .item("pending", pendingTransactions)
-                .msg(
-                  "we still have pending transactions, try to publish a new block"
-                )
-            publishBlock().onComplete {
-              case Success(_) =>
-              case Failure(err) =>
-                logger.warn.item(err).msg("failed to publish")
-            }
+              // after we've gone through all the latest bmms
+              //   in principle our pending transactions are still valid,
+              //   so we try to publish a block again
+              if (pendingTransactions.size > 0)
+                logger.debug
+                  .item("pending", pendingTransactions)
+                  .msg(
+                    "we still have pending transactions, try to publish a new block"
+                  )
+
+              publishBlock().onComplete {
+                case Success(_) =>
+                case Failure(err) =>
+                  logger.warn.item(err).msg("failed to publish")
+              }
             }
           }
       }
