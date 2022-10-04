@@ -32,8 +32,7 @@ object Manager {
   val pendingHtlcs: Map[String, Promise[Boolean]] = Map.empty
 
   // this debouncing works both for skipping the initial burst of blocks
-  //   and for giving the node time to catch up with the most recent chain
-  lazy val onBlock = Helpers.debounce(onBlock_, 15.seconds)
+  lazy val onBlock = Helpers.debounce(onBlock_, 2.seconds)
 
   def onBlock_(bitcoinHeight: Int): Future[Unit] = {
     logger.debug
@@ -117,64 +116,21 @@ object Manager {
             logger.debug.item("bmm", bmm).msg("store this as latest")
             latestSeen = bmm
 
-            // fail all the transactions and cancel the lightning invoices
-            //   if they're over their threshold bitcoin block height (we can't
-            //   hold payments for too long)
-            pendingTransactions.filterInPlace { case (id, (_, _, height)) =>
-              if (height.toInt < bitcoinHeight) {
-                // it's over the threshold, so
-                logger.debug
-                  .item("tx", id)
-                  .msg(
-                    "dropping transaction since it has been here for too long"
-                  )
-                // fail the payment
-                pendingHtlcs
-                  .get(id)
-                  .map(_.success(false))
-                false // remove it from list
-              } else {
-                // it is still ok, so
-                true // keep it
-              }
-            }
-            Datastore.storePendingTransactions()
+            filterOutTransactionsOverTheThreshold(bitcoinHeight)
 
             // give some time for the node to process the new block (if any)
             Timer.timeout(15.seconds) { () =>
-              // then
-              //   check which of our pending transactions are still valid
-              //   after that block and fail the lightning payments
-              //   corresponding to the invalid ones
-              pendingTransactions.foreach { case (txid, (tx, _, _)) =>
-                Node.validateTx(tx).onComplete {
-                  case Success((_, ok)) if ok =>
-                    logger.info
-                      .item("tx", txid)
-                      .msg(
-                        "transaction still valid, keeping it and trying again in the next block"
-                      )
-                  case _ =>
-                    logger.info
-                      .item("tx", txid)
-                      .msg("transaction not valid anymore, dropping it")
-                    pendingHtlcs
-                      .get(txid)
-                      .map(_.success(false))
-                    pendingTransactions.remove(txid)
-                    Datastore.storePendingTransactions()
-                }
-              }
+              filterOutTransactionsNotValidAnymore()
 
-              // after we've gone through all the latest bmms
-              //   in principle our pending transactions are still valid,
-              //   so we try to publish a block again
-              if (pendingTransactions.size > 0)
-                logger.debug
-                  .item("pending", pendingTransactions)
-                  .msg(
-                    "we still have pending transactions, try to publish a new block"
-                  )
+            // after we've gone through all the latest bmms
+            //   in principle our pending transactions are still valid,
+            //   so we try to publish a block again
+            if (pendingTransactions.size > 0)
+              logger.debug
+                .item("pending", pendingTransactions)
+                .msg(
+                  "we still have pending transactions, try to publish a new block"
+                )
 
               publishBlock().onComplete {
                 case Success(_) =>
@@ -186,6 +142,55 @@ object Manager {
       }
 
     Future {}
+  }
+
+  def filterOutTransactionsNotValidAnymore(): Unit = {
+    // check which of our pending transactions are still valid
+    //   and fail the lightning payments corresponding to the invalid ones
+    pendingTransactions.foreach { case (txid, (tx, _, _)) =>
+      Node.validateTx(tx).onComplete {
+        case Success((_, ok)) if ok =>
+          logger.info
+            .item("tx", txid)
+            .msg(
+              "transaction still valid, keeping it and trying again in the next block"
+            )
+        case _ =>
+          logger.info
+            .item("tx", txid)
+            .msg("transaction not valid anymore, dropping it")
+          pendingHtlcs
+            .get(txid)
+            .map(_.success(false))
+          pendingTransactions.remove(txid)
+          Datastore.storePendingTransactions()
+      }
+    }
+  }
+
+  def filterOutTransactionsOverTheThreshold(bitcoinHeight: Int): Unit = {
+    // fail all the transactions and cancel the lightning invoices
+    //   if they're over their threshold bitcoin block height (we can't
+    //   hold payments for too long)
+    pendingTransactions.filterInPlace { case (id, (_, _, height)) =>
+      if (height.toInt < bitcoinHeight) {
+        // it's over the threshold, so
+        logger.debug
+          .item("tx", id)
+          .msg(
+            "dropping transaction since it has been here for too long"
+          )
+        // fail the payment
+        pendingHtlcs
+          .get(id)
+          .map(_.success(false))
+        false // remove it from list
+      } else {
+        // it is still ok, so
+        true // keep it
+      }
+    }
+    Datastore.storePendingTransactions()
   }
 
   def acceptPayment(hash: String): Future[Boolean] = {

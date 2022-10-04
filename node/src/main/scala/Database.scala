@@ -187,7 +187,9 @@ object Database {
     db.prepare(
       "UPDATE blocks SET block = ?, blockheight = ? WHERE bmmhash = ? AND block IS NULL RETURNING 1"
     )
-  def insertBlock(hash: ByteVector32, block: Block): Boolean = {
+  def insertBlock(hash: ByteVector32, block: Block): Option[Int] = {
+    val height = getBlockHeight(block.header.previous)
+
     Block.codec
       .encode(block)
       .toOption
@@ -197,7 +199,7 @@ object Database {
             bs.toByteVector,
             if block.header.previous == ByteVector32.Zeroes then 1
             else
-              getBlockHeight(block.header.previous)
+              height
                 .map[SQLiteValue](_ + 1)
                 .getOrElse[SQLiteValue](null)
             ,
@@ -207,7 +209,7 @@ object Database {
 
         // TODO update all blockheight of the following bmm blocks that match this one recursively
       }
-      .isDefined
+      .flatMap(_ => height)
   }
 
   private lazy val getBlockHeightStmt =

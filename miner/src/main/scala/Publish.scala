@@ -112,9 +112,8 @@ object Publish {
         .pipe(Psbt.toBase64(_))
     }
 
-    val done = for {
+    for {
       psbt <- finalPsbt
-      _ = logger.debug.item("psbt", psbt).msg("")
       _ <- rpc(
         "reserveinputs",
         ujson.Obj(
@@ -125,7 +124,6 @@ object Publish {
       )
       signedPsbt <- rpc("signpsbt", ujson.Obj("psbt" -> psbt))
         .map(_("signed_psbt").str)
-      _ = logger.debug.item("signed", signedPsbt).msg("")
 
       // save these as an attempted tx-block publish
       _ = { pendingPublishedBlocks += (blockHash -> block) }
@@ -141,12 +139,6 @@ object Publish {
         .msg("published bmm tx")
 
       txid
-    }
-
-    done.andThen {
-      case Failure(err) =>
-        logger.err.item(err).msg("failed to publish bitcoin tx")
-      case Success(_) =>
     }
   }
 }

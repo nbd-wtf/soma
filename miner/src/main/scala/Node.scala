@@ -27,13 +27,17 @@ object Node {
           .item(err)
           .item("method", method)
           .item("params", params)
-          .msg("failed to contact node")
+          .msg("failed to make request to node")
         scala.sys.exit(1)
       }
       .map { r =>
-        val b = ujson.read(r.body).obj
-        if b.contains("result") then b("result")
-        else throw new Exception(b("error").toString)
+        if (r.code == 0) throw new Exception("no response from node")
+        else if (r.code < 300 && r.body.size > 0) {
+          val b = ujson.read(r.body).obj
+          if b.contains("result") then b("result")
+          else throw new Exception(b("error").toString)
+        } else
+          throw new Exception(s"bad response from node (${r.code}): ${r.body}")
       }
 
   def getNextBlock(txs: Seq[ByteVector]): Future[(ByteVector32, ByteVector)] =

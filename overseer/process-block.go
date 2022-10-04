@@ -55,7 +55,7 @@ func processBlock(blockHeight uint64, blockHex string) error {
 						continue
 					} else {
 						// good, this is the genesis, proceed
-						index = 0
+						index = 1
 					}
 				} else if err != nil {
 					return fmt.Errorf("failed to read chain_block_tx: %w", err)

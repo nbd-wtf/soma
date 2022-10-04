@@ -16,18 +16,17 @@ func inspectBlocks() {
 	currentBlock++
 
 	for {
-		log.Debug().Uint64("height", currentBlock).Msg("inspecting block")
-
 		// get block from bitcoind
 		hash, err := bc.GetBlockHash(currentBlock)
 		if err != nil && strings.HasPrefix(err.Error(), "-8:") {
-			time.Sleep(1 * time.Minute)
+			time.Sleep(10 * time.Second)
 			continue
 		} else if err != nil {
 			log.Fatal().Err(err).Uint64("height", currentBlock).Msg("no block")
 			return
 		}
 
+		log.Debug().Uint64("height", currentBlock).Msg("inspecting block")
 		blockHex, err := bc.GetRawBlock(hash)
 		if err != nil {
 			log.Fatal().Err(err).Str("hash", hash).Msg("no block")
