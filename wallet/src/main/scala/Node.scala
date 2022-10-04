@@ -10,11 +10,11 @@ import scoin.Crypto.{PublicKey, PrivateKey}
 
 object Node {
   def getInfo(): Future[NodeInfo] =
-    call("info").map(_.as[NodeInfo].toOption.get)
+    call("info").map(_.as[NodeInfo].toTry.get)
 
   def getAssets(key: PublicKey): Future[List[String]] =
     call("getaccountassets", Map("pubkey" -> key.value.drop(1).toHex.asJson))
-      .map(_.as[List[String]].toOption.get)
+      .map(_.as[List[String]].toTry.get)
 
   def buildTx(
       asset: ByteVector32,
@@ -27,7 +27,7 @@ object Node {
       "to" -> to.toHex.asJson,
       "privateKey" -> privateKey.value.toHex.asJson
     )
-  ).map(_.as[BuiltTx].toOption.get)
+  ).map(_.as[BuiltTx].toTry.get)
 
   // ---
   val backend = FetchBackend()
@@ -45,8 +45,8 @@ object Node {
       )
       .send(backend)
       .map(_.body.toOption.get)
-      .map(parse(_).toOption.get)
-      .map(_.hcursor.downField("result").as[Json].toOption.get)
+      .map(parse(_).toTry.get)
+      .map(_.hcursor.downField("result").as[Json].toTry.get)
 }
 
 case class NodeInfo(

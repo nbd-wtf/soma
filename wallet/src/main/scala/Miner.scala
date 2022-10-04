@@ -11,13 +11,13 @@ import io.circe.syntax._
 import io.circe.parser._
 import io.circe.generic.auto._
 
-case class Miner(pubkey: String, address: String, rune: String) {
-  val commando = new Commando(pubkey, address, rune)
+case class Miner(pubkey: String, host: String, rune: String) {
+  val commando = new Commando(pubkey, host, rune)
 
   val status: Signal[MinerStatus] = EventStream
     .periodic(20000)
     .flatMap(_ => EventStream.fromFuture(commando.rpc("openchain-status")))
-    .map(_.as[MinerStatus].toOption.get)
+    .map(_.as[MinerStatus].toTry.getOrElse(MinerStatus.empty))
     .toSignal(MinerStatus.empty)
   val showInvoice: Var[Option[MinerInvoice]] = Var(None)
   val nextTx: Var[Option[String]] = Var(None)
@@ -35,22 +35,40 @@ case class Miner(pubkey: String, address: String, rune: String) {
 
   def render(): HtmlElement =
     div(
-      cls := "mr-3 py-3 px-4 my-3 bg-sky-600 text-white rounded-md shadow-lg w-auto max-w-xs",
+      cls := "mr-3 my-3 bg-sky-600 text-white rounded-md shadow-lg w-auto max-w-xs relative",
       div(
-        cls := "py-2",
-        cls := "text-xl text-bold",
-        "Miner"
+        cls := "py-3 px-4",
+        div(
+          cls := "py-2",
+          cls := "text-xl text-bold",
+          "Miner"
+        ),
+        div(
+          cls := "py-2",
+          div(cls := "text-xl text-ellipsis overflow-hidden", pubkey),
+          div(cls := "text-lg", host)
+        )
       ),
-      div(
-        cls := "py-2",
-        div(cls := "text-xl text-ellipsis overflow-hidden", pubkey),
-        div(cls := "text-lg", address)
-      ),
+      child <-- status.map(_.isConnected).map {
+        case true => renderConnected()
+        case false =>
+          div(
+            cls := "pt-6 w-full h-full flex justify-center absolute inset-0 uppercase text-xl font-bold",
+            backgroundColor := "rgba(1, 1, 1, 0.5)",
+            "Disconnected"
+          )
+      }
+    )
+
+  def renderConnected(): HtmlElement =
+    div(
+      cls := "py-3 px-4",
+      Main.txToMine --> nextTx,
       div(
         cls := "mb-3",
         div(
           b("pending txs: "),
-          child <-- status.map(_.pendingTxs)
+          child <-- status.map(_.pendingTxs.size)
         ),
         div(
           b("accumulated fees: "),
@@ -92,7 +110,7 @@ case class Miner(pubkey: String, address: String, rune: String) {
                   )
                 )
                 .map(_.tap(println(_)))
-                .map(_.as[MinerInvoice].toOption.get)
+                .map(_.as[MinerInvoice].toTry.get)
                 .onComplete {
                   case Success(inv) =>
                     println(s"got invoice from miner: $inv")
@@ -143,27 +161,29 @@ object Miner {
       .getMiners()
       .asInstanceOf[js.Promise[String]]
       .toFuture
-      .map(parse(_).toOption.get)
-      .map(_.as[List[Miner]].toOption.get)
+      .map(parse(_).toTry.get)
+      .map(_.as[List[Miner]].toTry.get)
 }
 
 case class MinerStatus(
-    pendingTxs: Int,
+    pendingTxs: List[String],
     accFees: Int
-)
+) {
+  def isConnected = accFees >= 0
+}
 
 object MinerStatus {
   given Decoder[MinerStatus] = new Decoder[MinerStatus] {
     final def apply(c: HCursor): Decoder.Result[MinerStatus] =
       for {
-        pendingTxs <- c.downField("pending_txs").as[Int]
+        pendingTxs <- c.downField("pending_txs").as[List[String]]
         accFees <- c.downField("acc_fees").as[Int]
       } yield {
         MinerStatus(pendingTxs, accFees)
       }
   }
 
-  def empty = MinerStatus(0, 0)
+  def empty = MinerStatus(List.empty, -1)
 }
 
 case class MinerInvoice(
