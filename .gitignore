@@ -8,3 +8,8 @@ debug.log
 project/metals.sbt
 project/project
 data/
+yarn*
+node_modules
+*.sqlite
+wallet/wallet
+*/project

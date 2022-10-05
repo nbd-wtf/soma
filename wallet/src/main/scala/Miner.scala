@@ -172,7 +172,7 @@ case class Miner(pubkey: String, host: String, rune: String) {
                 disabled <-- Signal
                   .combine(nextTx.signal, nextFee.signal)
                   .map(_.isEmpty && _ > 0),
-                "Publish"
+                "publish"
               )
             )
           )

@@ -36,11 +36,13 @@ object Publish {
     } yield {
       val outputs = listfunds("outputs").arr
         .filter(utxo => utxo("status").str == "confirmed")
-      val nextPsbt = overseerResponse
-        .pipe(_.body)
-        .pipe(ujson.read(_))
-        .pipe(_("next")("psbt").str)
-        .pipe(Psbt.fromBase64(_))
+
+      require(
+        overseerResponse.code > 0 && overseerResponse.body.size > 0,
+        "no response from overseer"
+      )
+      val nextPsbt = Psbt
+        .fromBase64(ujson.read(overseerResponse.body)("next")("psbt").str)
         .get
 
       val ourScriptPubKey = listaddrs
