@@ -35,16 +35,14 @@ object Publish {
       listaddrs <- rpc("dev-listaddrs", ujson.Obj("bip32_max_index" -> 0))
     } yield {
       val outputs = listfunds("outputs").arr
-        .filter(utxo =>
-          utxo("status").str == "confirmed"
-          // && utxo("reserved").bool == false
-        )
+        .filter(utxo => utxo("status").str == "confirmed")
       val nextPsbt = overseerResponse
         .pipe(_.body)
         .pipe(ujson.read(_))
         .pipe(_("next")("psbt").str)
         .pipe(Psbt.fromBase64(_))
         .get
+
       val ourScriptPubKey = listaddrs
         .pipe(_("addresses")(0)("pubkey").str)
         .pipe(ByteVector.fromValidHex(_))

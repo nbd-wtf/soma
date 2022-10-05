@@ -32,7 +32,7 @@ var (
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "webapp" {
-		http.HandleFunc("/commando", func(w http.ResponseWriter, r *http.Request) {
+		http.HandleFunc("/commando/", func(w http.ResponseWriter, r *http.Request) {
 			var params struct {
 				NodeId string `json:"nodeId"`
 				Host   string `json:"host"`

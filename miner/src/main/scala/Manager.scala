@@ -20,9 +20,6 @@ object Manager {
 
   var latestSeen = Bmm("", 0, None)
 
-  // { invoice_hash -> waitinvoice_promise }
-  val invoiceWaiters: Map[String, Set[Promise[Unit]]] = Map.empty
-
   // { txid -> full_tx }
   val idToFullTx: Map[String, ByteVector] = Map.empty
 
@@ -122,21 +119,21 @@ object Manager {
             Timer.timeout(15.seconds) { () =>
               filterOutTransactionsNotValidAnymore()
 
-            // after we've gone through all the latest bmms
-            //   in principle our pending transactions are still valid,
-            //   so we try to publish a block again
-            if (pendingTransactions.size > 0)
-              logger.debug
-                .item("pending", pendingTransactions)
-                .msg(
-                  "we still have pending transactions, try to publish a new block"
-                )
+              // after we've gone through all the latest bmms
+              //   in principle our pending transactions are still valid,
+              //   so we try to publish a block again
+              if (pendingTransactions.size > 0)
+                logger.debug
+                  .item("pending", pendingTransactions)
+                  .msg(
+                    "we still have pending transactions, try to publish a new block"
+                  )
 
-              publishBlock().onComplete {
-                case Success(_) =>
-                case Failure(err) =>
-                  logger.warn.item(err).msg("failed to publish")
-              }
+                publishBlock().onComplete {
+                  case Success(_) =>
+                  case Failure(err) =>
+                    logger.warn.item(err).msg("failed to publish")
+                }
             }
           }
       }
@@ -213,11 +210,7 @@ object Manager {
 
         case Success(invoice) =>
           // notify any listeners we might have
-          invoiceWaiters
-            .getOrElse(invoice("payment_hash").str, Set.empty)
-            .foreach { p =>
-              p.success(())
-            }
+          Main.invoiceWaiters.resolve(invoice("payment_hash").str, "holding")
 
           val fee = MilliSatoshi(invoice("msatoshi").num.toLong)
 

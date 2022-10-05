@@ -13,7 +13,8 @@ import scodec.bits.ByteVector
 import ujson._
 import scoin._
 import unixsocket.UnixSocket
-import upack.Obj.apply
+
+type InvoiceStatus = "holding" | "resolved" | "givenup" | "failed"
 
 object Main {
   val logger = new nlog.Logger()
@@ -30,6 +31,9 @@ object Main {
       )
     )
     .map(_ => ())
+
+  // { invoice_hash -> waitinvoice_promise }
+  val invoiceWaiters = Helpers.PromisePool[InvoiceStatus]
 
   def main(args: Array[String]): Unit = {
     Poll(0).startRead { v =>
@@ -145,7 +149,7 @@ object Main {
               ),
               ujson.Obj(
                 "name" -> "openchain-waitinvoice",
-                "usage" -> "hash",
+                "usage" -> "payment_hash",
                 "description" -> "returns when a payment is seen for the given invoice, but not necessarily settled"
               )
             ),
@@ -195,14 +199,19 @@ object Main {
               logger.debug
                 .item("hash", hash.take(6))
                 .msg("fulfilling lightning payment")
+
+              invoiceWaiters.resolve(hash, "resolved", isFinal = true)
               reply(ujson.Obj("result" -> "continue"))
             case Success(false) =>
               logger.debug
                 .item("hash", hash.take(6))
                 .msg("we couldn't include the transaction")
+
+              invoiceWaiters.resolve(hash, "givenup", isFinal = true)
               reply(ujson.Obj("result" -> "fail"))
             case Failure(err) =>
               logger.err.item(err).msg("rejecting payment because of a failure")
+              invoiceWaiters.resolve(hash, "failed", isFinal = true)
               reply(ujson.Obj("result" -> "fail"))
           }
         }
@@ -239,25 +248,20 @@ object Main {
         } catch {
           case err: java.util.NoSuchElementException =>
             replyError(400, "wrong params")
-          case err: Throwable => replyError(500, s"something went wrong: $err")
+          case err: Throwable =>
+            replyError(500, s"something went wrong: $err")
         }
       case "openchain-waitinvoice" =>
         try {
           val hash = (params match {
-            case o: Obj => o("hash").str
+            case o: Obj => o("payment_hash").str
             case a: Arr => a(0).str
           })
 
-          val p = Promise[Unit]()
-          Manager.invoiceWaiters.updateWith(hash) {
-            case None           => Some(Set(p))
-            case Some(promises) => Some(promises + p)
+          invoiceWaiters.add(hash).map { status =>
+            reply(ujson.Obj("status" -> status))
           }
 
-          // this future will always resolve with a success
-          p.future.foreach { _ =>
-            reply(ujson.Obj() /* irrelevant */ )
-          }
         } catch {
           case err: java.util.NoSuchElementException =>
             replyError(400, "wrong params")

@@ -88,8 +88,7 @@ object Wallet {
           cls := "mt-1 flex justify-end",
           button(
             cls := "p-1 pb-2 mt-2 bg-white text-black rounded-md shadow-lg",
-            disabled <-- mintingAsset.signal.map(_.isEmpty),
-            "Mint"
+            "mint"
           )
         )
       )

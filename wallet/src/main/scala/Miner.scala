@@ -22,19 +22,34 @@ case class Miner(pubkey: String, host: String, rune: String) {
   val showInvoice: Var[Option[MinerInvoice]] = Var(None)
   val nextTx: Var[Option[String]] = Var(None)
   val nextFee: Var[Int] = Var(0)
-  val invoicePaid = showInvoice.signal.changes
-    .collect { case Some(mi) => mi.hash }
-    .flatMap(hash =>
+
+  val invoiceStatusesResultBus = new EventBus[String]
+  val invoiceStatus: Signal[String] = EventStream
+    .combine(
+      showInvoice.signal.changes,
+      EventStream
+        .merge(EventStream.fromValue(()), invoiceStatusesResultBus.events)
+    )
+    .map(_.tap(println(_)))
+    .collect { case (Some(mi), _) => mi.hash }
+    .flatMap { hash =>
       EventStream.fromFuture(
         commando
           .rpc("openchain-waitinvoice", Map("payment_hash" -> hash.asJson))
+          .map(
+            _.hcursor
+              .downField("status")
+              .as[String]
+              .toTry
+              .getOrElse("unexpected")
+          )
       )
-    )
-    .map(_ => true)
-    .toSignal(false)
+    }
+    .toSignal("waitingpayment")
 
   def render(): HtmlElement =
     div(
+      invoiceStatus.changes --> invoiceStatusesResultBus,
       cls := "mr-3 my-3 bg-sky-600 text-white rounded-md shadow-lg w-auto max-w-xs relative",
       div(
         cls := "py-3 px-4",
@@ -62,8 +77,14 @@ case class Miner(pubkey: String, host: String, rune: String) {
 
   def renderConnected(): HtmlElement =
     div(
-      cls := "py-3 px-4",
+      // effects:
+      // when a transaction is generated, force the miner value to it
       Main.txToMine --> nextTx,
+      //   and hide whatever invoice we had before
+      Main.txToMine --> showInvoice.writer.contramap(_ => None),
+
+      // ~
+      cls := "py-3 px-4",
       div(
         cls := "mb-3",
         div(
@@ -75,11 +96,15 @@ case class Miner(pubkey: String, host: String, rune: String) {
           child <-- status.map(_.accFees)
         )
       ),
-      child <-- Signal.combine(showInvoice.signal, invoicePaid).map {
-        case (Some(_), true) =>
-          div("payment received, trying to publish transaction")
-        case (Some(inv), false) =>
+      child <-- showInvoice.signal.map {
+        case Some(inv) =>
           div(
+            child <-- invoiceStatus.map(status =>
+              div(
+                b("status: "),
+                div(cls := "inline", fontFamily := "monospace", status)
+              )
+            ),
             div(
               cls := "flex justify-center my-2",
               onMountCallback { ctx =>
@@ -98,7 +123,7 @@ case class Miner(pubkey: String, host: String, rune: String) {
               inv.invoice.toLowerCase()
             )
           )
-        case (None, _) =>
+        case None =>
           form(
             onSubmit.preventDefault --> { _ =>
               commando
