@@ -8,7 +8,8 @@ import scodec.DecodeResult
 import upickle.default._
 import scala.scalajs.js.typedarray.Uint8Array
 import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
-import scoin.{Crypto, ByteVector32}
+import scoin.ByteVector32
+import scoin.Crypto.XOnlyPublicKey
 import openchain._
 
 import Picklers.given
@@ -16,6 +17,7 @@ import Picklers.given
 object HttpServer {
   def start(): Unit = {
     http.createServer(handleRequest).listen(Config.port)
+    println(s"listening at port ${Config.port}")
   }
 
   def handleRequest(req: Request, res: Response): Unit = {
@@ -105,7 +107,7 @@ object HttpServer {
               Future {
                 Database
                   .getAccountAssets(
-                    Crypto.XOnlyPublicKey(
+                    XOnlyPublicKey(
                       ByteVector32(
                         ByteVector.fromValidHex(params("pubkey").str)
                       )

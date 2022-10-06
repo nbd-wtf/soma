@@ -279,7 +279,10 @@ object Manager {
                       .contains("bad-txns-inputs-missingorspent") ||
                       err
                         .toString()
-                        .contains("insufficient fee, rejecting replacement") =>
+                        .contains("insufficient fee, rejecting replacement") ||
+                      err
+                        .toString()
+                        .contains("min relay fee not met") =>
                   logger.debug
                     .item(err)
                     .msg("failed to publish bmm hash, but will try again later")

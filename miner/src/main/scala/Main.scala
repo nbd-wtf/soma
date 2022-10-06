@@ -219,7 +219,10 @@ object Main {
         reply(
           ujson.Obj(
             "pending_txs" -> Manager.pendingTransactions.keySet,
-            "acc_fees" -> Manager.totalFees.toLong.toInt
+            "acc_fees" -> Manager.totalFees.toLong.toInt,
+            "last_published_txid" -> Publish.lastBitcoinTx
+              .map[ujson.Value](identity)
+              .getOrElse(ujson.Null)
           )
         )
       case "openchain-invoice" =>

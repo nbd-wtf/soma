@@ -66,7 +66,6 @@ lazy val wallet = project
     Compile / npmDependencies ++= Seq(
       "kjua" -> "0.9.0"
     ),
-    esbuildOptions ++= Seq(),
     esPackageManager := Yarn,
     scalaJSLinkerConfig ~= { _.withModuleKind(ModuleKind.CommonJSModule) },
     resolvers += "s01" at "https://s01.oss.sonatype.org/content/repositories/snapshots/"
@@ -74,3 +73,26 @@ lazy val wallet = project
   .dependsOn(core.js)
   .enablePlugins(EsbuildPlugin, ScalaJSPlugin)
   .in(file("wallet"))
+
+lazy val explorer = project
+  .settings(
+    name := "openchain-explorer",
+    scalaJSUseMainModuleInitializer := true,
+    libraryDependencies ++= Seq(
+      "io.circe" %%% "circe-core" % "0.14.3",
+      "io.circe" %%% "circe-generic" % "0.14.3",
+      "io.circe" %%% "circe-parser" % "0.14.3",
+      "org.scala-js" %%% "scala-js-macrotask-executor" % "1.1.0",
+      "com.softwaremill.sttp.client3" %%% "core" % "3.8.0",
+      "com.raquo" %%% "laminar" % "0.14.5",
+
+      // use these until everybody updates to scala-3.2.0
+      "org.typelevel" %%% "cats-core" % "2.9-826466b-SNAPSHOT",
+    ),
+    esPackageManager := Yarn,
+    scalaJSLinkerConfig ~= { _.withModuleKind(ModuleKind.CommonJSModule) },
+    resolvers += "s01" at "https://s01.oss.sonatype.org/content/repositories/snapshots/"
+  )
+  .dependsOn(core.js)
+  .enablePlugins(EsbuildPlugin, ScalaJSPlugin)
+  .in(file("explorer"))

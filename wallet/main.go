@@ -62,7 +62,7 @@ func main() {
 		go http.ListenAndServe(":43222", nil)
 		w := webview.New(true)
 		defer w.Destroy()
-		w.SetTitle("openchain wallet")
+		w.SetTitle("wallet")
 		w.SetSize(1024, 768, webview.HintMin)
 		w.Bind("storeKey", storeKey)
 		w.Bind("loadKey", loadKey)

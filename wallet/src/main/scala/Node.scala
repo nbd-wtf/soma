@@ -38,31 +38,25 @@ object Node {
 }
 
 case class NodeInfo(
+    latestKnownBlock: Option[BlockInfo],
     latestBmmTx: BmmTx
 )
 
 object NodeInfo {
   given Decoder[NodeInfo] = new Decoder[NodeInfo] {
-    final def apply(c: HCursor): Decoder.Result[NodeInfo] =
-      c.downField("latest_bmm_tx").as[BmmTx].map(NodeInfo(_))
-  }
-
-  def empty = NodeInfo(BmmTx("", 0, None))
-}
-
-case class AssetInfo(asset: ByteVector32, counter: Int)
-
-object AssetInfo {
-  given Decoder[AssetInfo] = new Decoder[AssetInfo] {
-    final def apply(c: HCursor): Decoder.Result[AssetInfo] =
-      for {
-        assetHex <- c.downField("asset").as[String]
-        counter <- c.downField("counter").as[Int]
-      } yield {
-        AssetInfo(ByteVector32(ByteVector.fromValidHex(assetHex)), counter)
+    final def apply(c: HCursor): Decoder.Result[NodeInfo] = for {
+      bmm <- c.downField("latest_bmm_tx").as[BmmTx]
+      block = c.downField("latest_known_block").as[BlockInfo] match {
+        case Right(b) => Some(b)
+        case Left(_)  => None
       }
+    } yield NodeInfo(block, bmm)
   }
+
+  def empty = NodeInfo(None, BmmTx("", 0, None))
 }
+
+case class BlockInfo(hash: String, height: Int)
 
 case class BmmTx(
     txid: String,
@@ -83,4 +77,16 @@ object BmmTx {
   }
 }
 
-case class BuiltTx(tx: String, hash: String)
+case class AssetInfo(asset: ByteVector32, counter: Int)
+
+object AssetInfo {
+  given Decoder[AssetInfo] = new Decoder[AssetInfo] {
+    final def apply(c: HCursor): Decoder.Result[AssetInfo] =
+      for {
+        assetHex <- c.downField("asset").as[String]
+        counter <- c.downField("counter").as[Int]
+      } yield {
+        AssetInfo(ByteVector32(ByteVector.fromValidHex(assetHex)), counter)
+      }
+  }
+}

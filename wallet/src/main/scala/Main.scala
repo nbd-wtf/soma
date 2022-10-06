@@ -3,8 +3,12 @@ import org.scalajs.dom
 import com.raquo.laminar.api.L._
 
 object Main {
+  val refetchInfoBus = new EventBus[Unit]
   val info: Signal[NodeInfo] = EventStream
-    .periodic(20000)
+    .merge(
+      refetchInfoBus.events,
+      EventStream.periodic(20000).map(_ => ())
+    )
     .flatMap(_ => EventStream.fromFuture(Node.getInfo()))
     .toSignal(NodeInfo.empty)
 
@@ -18,7 +22,7 @@ object Main {
 
   val app = div(
     cls := "p-8",
-    h1(cls := "text-xl", "openchain wallet"),
+    h1(cls := "text-xl", "wallet"),
     div(
       cls := "flex",
       BMM.render(),
