@@ -9,8 +9,9 @@ import upickle.default._
 import scala.scalajs.js.typedarray.Uint8Array
 import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
 import scoin.{Crypto, ByteVector32}
+import openchain._
 
-import Picklers._
+import Picklers.given
 
 object HttpServer {
   def start(): Unit = {
@@ -110,7 +111,12 @@ object HttpServer {
                       )
                     )
                   )
-                  .map(_.toHex)
+                  .map((asset, counter) =>
+                    ujson.Obj(
+                      "asset" -> asset.toHex,
+                      "counter" -> counter
+                    )
+                  )
               }
             case "listallassets" =>
               Future {
@@ -139,29 +145,6 @@ object HttpServer {
                   .pipe(writeJs(_))
               }
 
-            // to be called by the user
-            case "buildtx" =>
-              Future {
-                val asset =
-                  ByteVector32(ByteVector.fromValidHex(params("asset").str))
-                val to = Crypto.XOnlyPublicKey(
-                  ByteVector32(ByteVector.fromValidHex(params("to").str))
-                )
-                val privateKey = Crypto.PrivateKey(
-                  ByteVector32(
-                    ByteVector.fromValidHex(params("privateKey").str)
-                  )
-                )
-                val tx = Tx.build(asset, to, privateKey)
-                ujson.Obj(
-                  "hash" -> tx.hash.toHex,
-                  "tx" -> Tx.codec
-                    .encode(tx)
-                    .require
-                    .toHex
-                )
-              }
-
             // to be called by the miner
             case "validatetx" =>
               Future {
@@ -180,12 +163,15 @@ object HttpServer {
                     )
                   )
                   .getOrElse(Set.empty)
-                ujson.Obj("hash" -> tx.hash.toHex, "ok" -> tx.validate(others))
+                ujson.Obj(
+                  "hash" -> tx.hash.toHex,
+                  "ok" -> Blockchain.validateTx(tx, others)
+                )
               }
 
             case "makeblock" =>
               Future {
-                Block.makeBlock(
+                Blockchain.makeBlock(
                   params("txs").arr.toList
                     .map(_.str)
                     .map(

@@ -10,7 +10,7 @@ import scoin.ByteVector32
 
 object BitcoinManager {
   private var p = Promise[Unit]()
-  private var startedP = p.future // never completes
+  private var startedP = Future.successful(())
 
   private def started =
     !startedP.isCompleted // if completed means we're not working
@@ -36,7 +36,7 @@ object BitcoinManager {
           ujson.Arr(tipTx("blockhash").str)
         )
       } yield {
-        println(s"starting scan from ${tipTx("txid").str}")
+        // println(s"starting scan from ${tipTx("txid").str}")
         Database.addTx(bmmHeight, tipTx("txid").str, getBmmHash(tipTx.obj))
         inspectNextBlocks(
           bmmHeight + 1,

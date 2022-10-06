@@ -12,6 +12,9 @@ object Main {
   Miner.getMiners().foreach(miners.set(_))
 
   val txToMine: Var[Option[String]] = Var(None)
+  val concreteTxToMine: EventStream[String] = txToMine.signal.changes.collect {
+    case Some(h) => h
+  }
 
   val app = div(
     cls := "p-8",

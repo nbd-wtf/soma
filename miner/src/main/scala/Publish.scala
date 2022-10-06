@@ -24,7 +24,7 @@ object Publish {
     logger.info
       .item("bmm-hash", blockHash.toHex)
       .item("fee", fee)
-      .msg("publishing bmm block!")
+      .msg("publishing bmm tx!")
 
     val finalPsbt = for {
       listfunds <- rpc("listfunds")

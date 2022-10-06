@@ -1,6 +1,6 @@
 import upickle.default._
 import scodec.bits.ByteVector
-import scoin._
+import scoin.{Block => _, BlockHeader => _, _}
 import openchain._
 
 object Picklers {

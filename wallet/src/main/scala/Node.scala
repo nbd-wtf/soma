@@ -5,29 +5,17 @@ import io.circe._
 import io.circe.syntax._
 import io.circe.parser._
 import io.circe.generic.auto._
+import scodec.bits.ByteVector
 import scoin._
-import scoin.Crypto.{PublicKey, PrivateKey}
+import scoin.Crypto.{XOnlyPublicKey, PrivateKey}
 
 object Node {
   def getInfo(): Future[NodeInfo] =
     call("info").map(_.as[NodeInfo].toTry.get)
 
-  def getAssets(key: PublicKey): Future[List[String]] =
-    call("getaccountassets", Map("pubkey" -> key.value.drop(1).toHex.asJson))
-      .map(_.as[List[String]].toTry.get)
-
-  def buildTx(
-      asset: ByteVector32,
-      to: ByteVector32,
-      privateKey: PrivateKey
-  ): Future[BuiltTx] = call(
-    "buildtx",
-    Map(
-      "asset" -> asset.toHex.asJson,
-      "to" -> to.toHex.asJson,
-      "privateKey" -> privateKey.value.toHex.asJson
-    )
-  ).map(_.as[BuiltTx].toTry.get)
+  def getAssets(key: XOnlyPublicKey): Future[List[AssetInfo]] =
+    call("getaccountassets", Map("pubkey" -> key.value.toHex.asJson))
+      .map(_.as[List[AssetInfo]].toTry.get)
 
   // ---
   val backend = FetchBackend()
@@ -60,6 +48,20 @@ object NodeInfo {
   }
 
   def empty = NodeInfo(BmmTx("", 0, None))
+}
+
+case class AssetInfo(asset: ByteVector32, counter: Int)
+
+object AssetInfo {
+  given Decoder[AssetInfo] = new Decoder[AssetInfo] {
+    final def apply(c: HCursor): Decoder.Result[AssetInfo] =
+      for {
+        assetHex <- c.downField("asset").as[String]
+        counter <- c.downField("counter").as[Int]
+      } yield {
+        AssetInfo(ByteVector32(ByteVector.fromValidHex(assetHex)), counter)
+      }
+  }
 }
 
 case class BmmTx(

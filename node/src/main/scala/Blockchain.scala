@@ -7,7 +7,7 @@ object Blockchain {
       txs: Seq[Tx],
       parent: Option[ByteVector32] = None
   ): Either[String, Block] =
-    if (!Tx.validateTxs(txs.toSet))
+    if (!validateTxs(txs.toSet))
       Left("one or more of the transaction is invalid")
     else {
       val previous = parent
@@ -25,35 +25,27 @@ object Blockchain {
     }
 
   def validateBlock(block: Block): Boolean =
-    Tx.validateTxs(txs.toSet) && ■ value validateTxs is not a member of o
-    header.merkleRoot == Tx.merkleRoot(txs)
+    validateTxs(block.txs.toSet) &&
+      block.header.merkleRoot == Tx.merkleRoot(block.txs)
 
   def validateTxs(txs: Set[Tx]): Boolean =
     txs.forall(thisTx =>
-      validate(thisTx, txs.filterNot(_ == thisTx).toSet) == true ■ value v
+      validateTx(thisTx, txs.filterNot(_ == thisTx).toSet) == true
     )
 
   def validateTx(tx: Tx, otherTxsInTheBlock: Set[Tx] = Set.empty): Boolean = {
     val ownerCorrect = Database.verifyAssetOwnerAndCounter(
-      asset,
-      from,
-      counter
+      tx.asset,
+      tx.from,
+      tx.counter
     )
-    val isNewAsset = counter == 1 && Database.verifyAssetDoesntExist(asset)
+    val isNewAsset =
+      tx.counter == 1 && Database.verifyAssetDoesntExist(tx.asset)
     val assetNotBeingTransactedAlready =
-      !otherTxsInTheBlock.exists(tx => tx.asset == this.asset)
+      !otherTxsInTheBlock.exists(_.asset == tx.asset)
 
-    (ownerCorrect || isNewAsset) && assetNotBeingTransactedAlready && signatureValid()
+    (ownerCorrect || isNewAsset) &&
+    assetNotBeingTransactedAlready &&
+    tx.signatureValid()
   }
-
-  def buildTx(
-      asset: ByteVector32,
-      to: Crypto.XOnlyPublicKey,
-      privateKey: Crypto.PrivateKey
-  ): Tx = Tx(
-    asset = asset,
-    to = to,
-    from = privateKey.publicKey.xonly,
-    counter = Database.getNextCounter(asset)
-  ).withSignature(privateKey)
 }

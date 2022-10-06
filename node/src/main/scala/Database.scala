@@ -1,4 +1,5 @@
 import scala.util.chaining._
+import scala.language.implicitConversions
 import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
 import scala.scalajs.js.JSConverters._
 import scala.scalajs.js
@@ -6,6 +7,7 @@ import scala.scalajs.js.annotation.JSImport
 import scala.scalajs.js.typedarray.Uint8Array
 import scodec.bits.ByteVector
 import scoin.{Crypto, ByteVector32, ByteVector64}
+import openchain._
 
 object Database {
   private var db: Database = _
@@ -256,26 +258,24 @@ object Database {
       .get(asset)
       .isEmpty
 
-  private lazy val getCurrentCounterStmt = db.prepare(
-    "SELECT counter FROM state WHERE asset = ?"
-  )
-  def getNextCounter(asset: ByteVector32): Int =
-    getCurrentCounterStmt
-      .get(asset)
-      .map(_.selectDynamic("counter").asInstanceOf[Int])
-      .getOrElse(1)
-
   private lazy val getAccountAssetsStmt = db.prepare(
-    "SELECT asset FROM state WHERE owner = ?"
+    "SELECT asset, counter FROM state WHERE owner = ?"
   )
-  def getAccountAssets(pubkey: Crypto.XOnlyPublicKey): List[ByteVector32] =
+  def getAccountAssets(
+      pubkey: Crypto.XOnlyPublicKey
+  ): List[(ByteVector32, Int)] =
     getAccountAssetsStmt
       .all(pubkey)
       .toList
       .map(row =>
-        ByteVector32(
-          ByteVector
-            .fromUint8Array(row.selectDynamic("asset").asInstanceOf[Uint8Array])
+        (
+          ByteVector32(
+            ByteVector
+              .fromUint8Array(
+                row.selectDynamic("asset").asInstanceOf[Uint8Array]
+              )
+          ),
+          row.selectDynamic("counter").asInstanceOf[Int]
         )
       )
 

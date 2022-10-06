@@ -10,6 +10,7 @@ import io.circe._
 import io.circe.syntax._
 import io.circe.parser._
 import io.circe.generic.auto._
+import cats.syntax.show
 
 case class Miner(pubkey: String, host: String, rune: String) {
   val commando = new Commando(pubkey, host, rune)
@@ -19,37 +20,47 @@ case class Miner(pubkey: String, host: String, rune: String) {
     .flatMap(_ => EventStream.fromFuture(commando.rpc("openchain-status")))
     .map(_.as[MinerStatus].toTry.getOrElse(MinerStatus.empty))
     .toSignal(MinerStatus.empty)
-  val showInvoice: Var[Option[MinerInvoice]] = Var(None)
+
+  val activeInvoice: Var[Option[MinerInvoice]] = Var(None)
   val nextTx: Var[Option[String]] = Var(None)
   val nextFee: Var[Int] = Var(0)
 
-  val invoiceStatusesResultBus = new EventBus[String]
+  val invoiceStatusesRestartBus = new EventBus[Unit]
+  val invoiceStatusesResultBus = new EventBus[Unit]
   val invoiceStatus: Signal[String] = EventStream
-    .combine(
-      showInvoice.signal.changes,
+    .merge(
       EventStream
-        .merge(EventStream.fromValue(()), invoiceStatusesResultBus.events)
+        .combine(
+          activeInvoice.signal.changes,
+          EventStream
+            .merge(EventStream.fromValue(()), invoiceStatusesResultBus.events)
+        )
+        .collect { case (Some(mi), _) => mi.hash }
+        .flatMap { hash =>
+          EventStream.fromFuture(
+            commando
+              .rpc("openchain-waitinvoice", Map("payment_hash" -> hash.asJson))
+              .map(
+                _.hcursor
+                  .downField("status")
+                  .as[String]
+                  .toTry
+                  .getOrElse("unexpected")
+              )
+          )
+        },
+      invoiceStatusesRestartBus.events.map(_ => "waitingpayment")
     )
     .map(_.tap(println(_)))
-    .collect { case (Some(mi), _) => mi.hash }
-    .flatMap { hash =>
-      EventStream.fromFuture(
-        commando
-          .rpc("openchain-waitinvoice", Map("payment_hash" -> hash.asJson))
-          .map(
-            _.hcursor
-              .downField("status")
-              .as[String]
-              .toTry
-              .getOrElse("unexpected")
-          )
-      )
-    }
     .toSignal("waitingpayment")
 
   def render(): HtmlElement =
     div(
-      invoiceStatus.changes --> invoiceStatusesResultBus,
+      // only restart the invoice awaiter when "holding"
+      invoiceStatus.changes
+        .collect { case "holding" => () } --> invoiceStatusesResultBus.writer,
+
+      // ~
       cls := "mr-3 my-3 bg-sky-600 text-white rounded-md shadow-lg w-auto max-w-xs relative",
       div(
         cls := "py-3 px-4",
@@ -70,7 +81,7 @@ case class Miner(pubkey: String, host: String, rune: String) {
           div(
             cls := "pt-6 w-full h-full flex justify-center absolute inset-0 uppercase text-xl font-bold",
             backgroundColor := "rgba(1, 1, 1, 0.5)",
-            "Disconnected"
+            "disconnected"
           )
       }
     )
@@ -78,10 +89,12 @@ case class Miner(pubkey: String, host: String, rune: String) {
   def renderConnected(): HtmlElement =
     div(
       // effects:
-      // when a transaction is generated, force the miner value to it
-      Main.txToMine --> nextTx,
+      // when a transaction is generated, force the miner value to it,
+      Main.concreteTxToMine.map(Some(_)) --> nextTx,
+      //   erase whatever invoice status we had before
+      Main.concreteTxToMine.map(_ => ()) --> invoiceStatusesRestartBus,
       //   and hide whatever invoice we had before
-      Main.txToMine --> showInvoice.writer.contramap(_ => None),
+      Main.concreteTxToMine --> activeInvoice.writer.contramap(_ => None),
 
       // ~
       cls := "py-3 px-4",
@@ -96,7 +109,7 @@ case class Miner(pubkey: String, host: String, rune: String) {
           child <-- status.map(_.accFees)
         )
       ),
-      child <-- showInvoice.signal.map {
+      child <-- activeInvoice.signal.map {
         case Some(inv) =>
           div(
             child <-- invoiceStatus.map(status =>
@@ -106,21 +119,32 @@ case class Miner(pubkey: String, host: String, rune: String) {
               )
             ),
             div(
-              cls := "flex justify-center my-2",
-              onMountCallback { ctx =>
-                ctx.thisNode.ref.appendChild(
-                  kjua(
-                    js.Dictionary(
-                      "text" -> inv.invoice.toUpperCase(),
-                      "size" -> 300
+              cls := "relative",
+              child <-- invoiceStatus.map {
+                case "waitingpayment" => div()
+                case _ =>
+                  div(
+                    cls := "pt-6 w-full h-full flex justify-center absolute inset-0 uppercase text-xl font-bold",
+                    backgroundColor := "rgba(1, 1, 1, 0.5)"
+                  )
+              },
+              div(
+                cls := "flex justify-center my-2",
+                onMountCallback { ctx =>
+                  ctx.thisNode.ref.appendChild(
+                    kjua(
+                      js.Dictionary(
+                        "text" -> inv.invoice.toUpperCase(),
+                        "size" -> 300
+                      )
                     )
                   )
-                )
-              }
-            ),
-            code(
-              cls := "block p-2 whitespace-pre-wrap break-all",
-              inv.invoice.toLowerCase()
+                }
+              ),
+              code(
+                cls := "block p-2 whitespace-pre-wrap break-all",
+                inv.invoice.toLowerCase()
+              )
             )
           )
         case None =>
@@ -139,7 +163,7 @@ case class Miner(pubkey: String, host: String, rune: String) {
                 .onComplete {
                   case Success(inv) =>
                     println(s"got invoice from miner: $inv")
-                    showInvoice.set(Some(inv))
+                    activeInvoice.set(Some(inv))
                     nextTx.set(None)
                   case Failure(err) =>
                     println(s"error getting invoice from miner: $err")

@@ -6,9 +6,10 @@ import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
 import com.raquo.laminar.api.L._
 import scodec.bits.ByteVector
 import scoin._
+import scoin.Crypto.{XOnlyPublicKey, PrivateKey}
 
 object Keys {
-  val privkey: Future[Crypto.PrivateKey] =
+  val privkey: Future[PrivateKey] =
     js.Dynamic.global
       .loadKey()
       .asInstanceOf[js.Promise[String]]
@@ -22,9 +23,9 @@ object Keys {
         }
         case key => key
       }
-      .map(hex => Crypto.PrivateKey(ByteVector32(ByteVector.fromValidHex(hex))))
+      .map(hex => PrivateKey(ByteVector32(ByteVector.fromValidHex(hex))))
 
-  val pubkey = privkey.map(_.publicKey)
+  val pubkey = privkey.map(_.publicKey.xonly)
 
   def render(): HtmlElement =
     div(

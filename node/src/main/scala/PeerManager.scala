@@ -5,6 +5,7 @@ import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
 import scodec.bits.ByteVector
 import scodec.{Attempt, DecodeResult}
 import scoin.ByteVector32
+import openchain._
 
 object PeerManager {
   var peers: List[Conn] = List.empty
@@ -64,7 +65,7 @@ object PeerManager {
             )
 
           case AnswerBlock(hash, Some(block))
-              if block.hash != hash || !block.validate() =>
+              if block.hash != hash || !Blockchain.validateBlock(block) =>
             println(s"got an invalid block for ${hash.toHex}")
 
           case AnswerBlock(hash, Some(block)) =>

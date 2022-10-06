@@ -17,6 +17,8 @@ object Datastore {
       .andThen {
         case Failure(err) =>
           logger.warn.item(err).msg("failed to load pending transactions")
+        case Success(None) =>
+          logger.info.msg("no pending transactions found")
         case Success(Some(v: ujson.Obj)) =>
           logger.info.item(v).msg("loaded pending transactions")
 
@@ -63,6 +65,8 @@ object Datastore {
       .andThen {
         case Failure(err) =>
           logger.warn.item(err).msg("failed to load pending blocks")
+        case Success(None) =>
+          logger.info.msg("no pending blocks found")
         case Success(Some(v: ujson.Obj)) =>
           logger.info.item(v).msg("loaded pending blocks")
 
@@ -108,7 +112,7 @@ object Datastore {
       "datastore",
       ujson.Obj(
         "mode" -> "create-or-replace",
-        "key" -> pendingTransactionsKey,
+        "key" -> key,
         "hex" -> ByteVector(ujson.writeToByteArray(value)).toHex
       )
     ).map(_ => ())

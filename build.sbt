@@ -36,11 +36,13 @@ lazy val miner = project
 lazy val node = project
   .settings(
     name := "openchain-node",
+    scalaJSUseMainModuleInitializer := true,
     libraryDependencies ++= Seq(
       "com.lihaoyi" %%% "upickle" % "1.6.0",
       "org.scala-js" %%% "scala-js-macrotask-executor" % "1.0.0",
       "com.softwaremill.sttp.client3" %%% "core" % "3.7.4"
-    )
+    ),
+    scalaJSLinkerConfig ~= { _.withModuleKind(ModuleKind.ESModule) },
   )
   .dependsOn(core.js)
   .enablePlugins(ScalaJSPlugin)
