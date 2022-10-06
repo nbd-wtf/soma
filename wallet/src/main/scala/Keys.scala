@@ -29,7 +29,8 @@ object Keys {
 
   def render(): HtmlElement =
     div(
-      cls := "py-3 px-4 my-3 bg-red-800 text-white rounded-md shadow-lg w-auto",
+      cls := "py-3 px-4 my-3 mr-3 bg-red-800 text-white rounded-md shadow-lg w-auto break-all",
+      maxWidth := "20rem",
       div(
         cls := "py-2",
         cls := "text-xl text-ellipsis overflow-hidden",

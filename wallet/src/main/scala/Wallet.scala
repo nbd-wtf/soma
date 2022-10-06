@@ -114,7 +114,7 @@ object Wallet {
         input(
           cls := "block text-black px-1 w-full",
           defaultValue := mintingAsset.now().get.toHex,
-          onInput.mapToValue.setAsValue
+          onInput.mapToValue
             .map[Option[ByteVector32]](hex =>
               ByteVector
                 .fromHex(hex)
@@ -173,7 +173,7 @@ object Wallet {
         "transfer to: ",
         input(
           cls := "block text-black px-1 w-full",
-          onInput.mapToValue.setAsValue
+          onInput.mapToValue
             .map(ByteVector.fromHex(_))
             .collect {
               case Some(b) if b.size == 32 =>

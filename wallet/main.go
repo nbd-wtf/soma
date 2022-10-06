@@ -9,21 +9,19 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path"
+	"runtime"
 
 	lnsocket "github.com/jb55/lnsocket/go"
 	"github.com/mitchellh/go-homedir"
-	"github.com/webview/webview"
 )
 
-//go:embed app.html
+//go:embed index.html
 var html string
 
 //go:embed target/esbuild/bundle.js
 var script []byte
-
-//go:embed target/esbuild/bundle.js.map
-var sourcemap []byte
 
 var (
 	configDir, _ = homedir.Expand("~/.config/openchain/wallet")
@@ -31,46 +29,69 @@ var (
 )
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "webapp" {
-		http.HandleFunc("/commando/", func(w http.ResponseWriter, r *http.Request) {
-			var params struct {
-				NodeId string `json:"nodeId"`
-				Host   string `json:"host"`
-				Rune   string `json:"rune"`
-				Method string `json:"method"`
-				Params string `json:"params"`
+	http.HandleFunc("/commando/", func(w http.ResponseWriter, r *http.Request) {
+		var params struct {
+			NodeId string `json:"nodeId"`
+			Host   string `json:"host"`
+			Rune   string `json:"rune"`
+			Method string `json:"method"`
+			Params string `json:"params"`
+		}
+		json.NewDecoder(r.Body).Decode(&params)
+		w.Write([]byte(commando(params.NodeId, params.Host, params.Rune, params.Method, params.Params)))
+	})
+	http.HandleFunc("/key", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "POST":
+			b, _ := ioutil.ReadAll(r.Body)
+			if len(b) > 0 {
+				hex := string(b)
+				storeKey(hex)
 			}
-			json.NewDecoder(r.Body).Decode(&params)
-			w.Write([]byte(commando(params.NodeId, params.Host, params.Rune, params.Method, params.Params)))
-		})
+		case "GET":
+			w.Write([]byte(loadKey()))
+		}
+	})
+
+	var url string
+	if len(os.Args) > 1 && os.Args[1] == "dev" {
 		http.Handle("/", http.FileServer(http.Dir(".")))
 		fmt.Println("listening at http://127.0.0.1:8000")
-		http.ListenAndServe(":8000", nil)
+		go http.ListenAndServe(":8000", nil)
+
+		url = "http://localhost:8000"
 	} else {
 		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("content-type", "text/html")
 			w.Write([]byte(html))
 		})
-		http.HandleFunc("/bundle.js", func(w http.ResponseWriter, r *http.Request) {
+		http.HandleFunc("/target/esbuild/bundle.js", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("content-type", "application/javascript")
 			w.Write(script)
 		})
-		http.HandleFunc("/bundle.js.map", func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("content-type", "application/javascript")
-			w.Write(sourcemap)
-		})
 		go http.ListenAndServe(":43222", nil)
-		w := webview.New(true)
-		defer w.Destroy()
-		w.SetTitle("wallet")
-		w.SetSize(1024, 768, webview.HintMin)
-		w.Bind("storeKey", storeKey)
-		w.Bind("loadKey", loadKey)
-		w.Bind("commando", commando)
-		w.Bind("getMiners", getMiners)
-		w.SetHtml(html)
-		w.Run()
+
+		url = "http://localhost:43222"
 	}
+
+	// open browser
+	var err error
+	switch runtime.GOOS {
+	case "linux":
+		err = exec.Command("xdg-open", url).Start()
+	case "windows":
+		err = exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+	case "darwin":
+		err = exec.Command("open", url).Start()
+	default:
+		err = fmt.Errorf("unsupported platform")
+	}
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// wait
+	<-make(chan struct{})
 }
 
 func storeKey(key string) {
@@ -109,33 +130,4 @@ func commando(nodeid string, host string, rune string, method string, params str
 	}
 
 	return body
-}
-
-func getMiners() string {
-	j, _ := json.Marshal([]struct {
-		Pubkey string `json:"pubkey"`
-		Host   string `json:"host"`
-		Port   int    `json:"port"`
-		Rune   string `json:"rune"`
-	}{
-		// signet
-		// {
-		//   Pubkey: "02855372fc5d61dfbe939aa04edb662beccc314d693d6ed65a92293137e9cf657b",
-		//   Host: "127.0.0.1:9730",
-		//   Rune: "tG5ixNeDcl2FxhY6Abi7jL_BauD-Ss1f-XfX0zKNNGg9MCZtZXRob2Reb3BlbmNoYWluLQ=="
-		// }
-
-		// regtest
-		{
-			Pubkey: "021b7a3a371b81f2f94a1998d76e5d28598d942003290f078e34bf335d2d28642a",
-			Host:   "127.0.0.1:9730",
-			Rune:   "NxuE4lr_ywfDrSSjRR-a8SFBBkRXTssSXpCPnD3U6t09MSZtZXRob2Reb3BlbmNoYWluLQ==",
-		},
-		{
-			Pubkey: "03786e2997686741ce9cd55c0344b7f5a6f1bc53a1b078740a25fbbb92586dbcc6",
-			Host:   "127.0.0.1:9730",
-			Rune:   "hd6Q5vvUO6ex68JcIPh2NG8jTKjYs9xYDOeRbK_b82w9MCZtZXRob2Reb3BlbmNoYWluLQ==",
-		},
-	})
-	return string(j)
 }

@@ -7,6 +7,8 @@ ThisBuild / developers          := List(tlGitHubDev("fiatjaf", "fiatjaf"))
 ThisBuild / version := "0.1.0-SNAPSHOT"
 ThisBuild / tlSonatypeUseLegacyHost := false
 
+Global / onChangedBuildSource := ReloadOnSourceChanges
+
 lazy val core = crossProject(JVMPlatform, JSPlatform, NativePlatform)
   .crossType(CrossType.Pure)
   .settings(
@@ -66,6 +68,7 @@ lazy val wallet = project
     Compile / npmDependencies ++= Seq(
       "kjua" -> "0.9.0"
     ),
+    esbuildOptions += "--target=es2020",
     esPackageManager := Yarn,
     scalaJSLinkerConfig ~= { _.withModuleKind(ModuleKind.CommonJSModule) },
     resolvers += "s01" at "https://s01.oss.sonatype.org/content/repositories/snapshots/"

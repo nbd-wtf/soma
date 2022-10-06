@@ -11,32 +11,19 @@ async function commando(nodeId, host, rune, method, params) {
   }).then(r => r.text())
 }
 async function storeKey (key) {
-  localStorage.setItem("openchain:key", key)
+  return fetch("/key", {
+    method: 'POST',
+    body: key,
+  })
 }
 async function loadKey () {
-  return localStorage.getItem("openchain:key") || ""
+  return fetch("/key").then(r => r.text())
 }
-async function getMiners() {
-  return JSON.stringify([
-    // signet
-    // {
-    //   pubkey: "02855372fc5d61dfbe939aa04edb662beccc314d693d6ed65a92293137e9cf657b",
-    //   host: "127.0.0.1:9739",
-    //   rune: "tG5ixNeDcl2FxhY6Abi7jL_BauD-Ss1f-XfX0zKNNGg9MCZtZXRob2Reb3BlbmNoYWluLQ=="
-    // }
-
-    // regtest
-    {
-      pubkey: "021b7a3a371b81f2f94a1998d76e5d28598d942003290f078e34bf335d2d28642a",
-      host: "127.0.0.1:9730",
-      rune: "NxuE4lr_ywfDrSSjRR-a8SFBBkRXTssSXpCPnD3U6t09MSZtZXRob2Reb3BlbmNoYWluLQ=="
-    },
-    {
-      pubkey: "03786e2997686741ce9cd55c0344b7f5a6f1bc53a1b078740a25fbbb92586dbcc6",
-      host: "127.0.0.1:9732",
-      rune: "hd6Q5vvUO6ex68JcIPh2NG8jTKjYs9xYDOeRbK_b82w9MCZtZXRob2Reb3BlbmNoYWluLQ=="
-    }
-  ])
+async function storeMiners(json) {
+  localStorage.setItem("openchain:miners", json)
+}
+async function loadMiners() {
+  return localStorage.getItem("openchain:miners")
 }
 </script>
 <script src=/target/esbuild/bundle.js></script>

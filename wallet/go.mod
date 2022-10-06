@@ -5,7 +5,6 @@ go 1.18
 require (
 	github.com/jb55/lnsocket/go v0.0.0-20220812055138-93307d1bfe4c
 	github.com/mitchellh/go-homedir v1.1.0
-	github.com/webview/webview v0.0.0-20220816141928-2ee04ccd0530
 )
 
 require (

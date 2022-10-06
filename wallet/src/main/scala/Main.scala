@@ -13,7 +13,7 @@ object Main {
     .toSignal(NodeInfo.empty)
 
   val miners: Var[List[Miner]] = Var(List.empty)
-  Miner.getMiners().foreach(miners.set(_))
+  Miner.loadMiners().foreach(miners.set(_))
 
   val txToMine: Var[Option[String]] = Var(None)
   val concreteTxToMine: EventStream[String] = txToMine.signal.changes.collect {
@@ -26,7 +26,8 @@ object Main {
     div(
       cls := "flex",
       BMM.render(),
-      Keys.render()
+      Keys.render(),
+      Miner.renderAddMinerForm()
     ),
     div(
       cls := "flex",

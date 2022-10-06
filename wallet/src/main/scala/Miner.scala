@@ -70,6 +70,7 @@ case class Miner(pubkey: String, host: String, rune: String) {
 
       // ~
       cls := "mr-3 my-3 bg-sky-600 text-white rounded-md shadow-lg w-auto max-w-xs relative",
+      minWidth := "15rem",
       div(
         cls := "py-3 px-4",
         div(
@@ -87,11 +88,25 @@ case class Miner(pubkey: String, host: String, rune: String) {
         case true => renderConnected()
         case false =>
           div(
-            cls := "pt-6 w-full h-full flex justify-center absolute inset-0 uppercase text-xl font-bold",
+            cls := "pt-6 w-full h-full rounded-md flex justify-center absolute inset-0 uppercase text-xl font-bold z-10",
             backgroundColor := "rgba(1, 1, 1, 0.5)",
             "disconnected"
           )
-      }
+      },
+      div(
+        cls := "top-2.5 right-2.5 absolute flex items-center justify-center w-6 h-6 cursor-pointer rounded-lg z-20 hover:bg-red-200",
+        onClick.preventDefault --> { _ =>
+          Miner.loadMiners().onComplete {
+            case Failure(err) =>
+              println(s"failed to load miners: $err")
+            case Success(miners) =>
+              val newMiners = miners.filterNot(_ == this)
+              Miner.storeMiners(newMiners)
+              Main.miners.set(newMiners)
+          }
+        },
+        "×"
+      )
     )
 
   def renderConnected(): HtmlElement =
@@ -192,11 +207,9 @@ case class Miner(pubkey: String, host: String, rune: String) {
               "msatoshi" -> nextFee.now().asJson
             )
           )
-          .map(_.tap(println(_)))
           .map(_.as[MinerInvoice].toTry.get)
           .onComplete {
             case Success(inv) =>
-              println(s"got invoice from miner: $inv")
               activeInvoice.set(Some(inv))
               nextTx.set(None)
             case Failure(err) =>
@@ -207,7 +220,7 @@ case class Miner(pubkey: String, host: String, rune: String) {
         cls := "block mb-1",
         "tx: ",
         textArea(
-          cls := "block text-black px-1 h-64 w-full",
+          cls := "block text-black px-1 h-32 w-full",
           controlled(
             value <-- nextTx.signal.map(_.getOrElse("")),
             onInput.mapToValue.map(Some(_)) --> nextTx.writer
@@ -219,7 +232,7 @@ case class Miner(pubkey: String, host: String, rune: String) {
         "fee to pay (sat): ",
         input(
           cls := "block text-black px-1 w-full",
-          onInput.mapToValue.setAsValue --> nextFee.writer
+          onInput.mapToValue --> nextFee.writer
             .contramap[String](_.toIntOption.map(_ * 1000).getOrElse(0))
         )
       ),
@@ -237,13 +250,84 @@ case class Miner(pubkey: String, host: String, rune: String) {
 }
 
 object Miner {
-  def getMiners(): Future[List[Miner]] =
+  def loadMiners(): Future[List[Miner]] =
     js.Dynamic.global
-      .getMiners()
+      .loadMiners()
       .asInstanceOf[js.Promise[String]]
       .toFuture
       .map(parse(_).toTry.get)
-      .map(_.as[List[Miner]].toTry.get)
+      .map(_.as[List[Miner]].toTry.getOrElse(List.empty))
+
+  def storeMiners(miners: List[Miner]): Unit =
+    js.Dynamic.global.storeMiners(miners.asJson.toString)
+
+  val nextMinerPubKey: Var[String] = Var("")
+  val nextMinerHost: Var[String] = Var("")
+  val nextMinerRune: Var[String] = Var("")
+
+  def renderAddMinerForm(): HtmlElement =
+    div(
+      cls := "my-3 px-4 py-2 bg-orange-600 text-white rounded-md shadow-lg w-auto max-w-xs",
+      div(
+        cls := "py-2 text-xl",
+        "Add Miner"
+      ),
+      form(
+        onSubmit.preventDefault --> { _ =>
+          Miner.loadMiners().onComplete {
+            case Failure(err) =>
+              println(s"failed to load miners: $err")
+            case Success(miners) =>
+              val miner = Miner(
+                nextMinerPubKey.now(),
+                nextMinerHost.now(),
+                nextMinerRune.now()
+              )
+              val newMiners = miners :+ miner
+              Miner.storeMiners(newMiners)
+              Main.miners.set(newMiners)
+          }
+        },
+        label(
+          cls := "block mb-1",
+          "pubkey: ",
+          input(
+            cls := "block text-black px-1 w-full",
+            onInput.mapToValue --> nextMinerPubKey.writer
+          )
+        ),
+        label(
+          cls := "block mb-1",
+          "host (with port): ",
+          input(
+            cls := "block text-black px-1 w-full",
+            onInput.mapToValue --> nextMinerHost.writer
+          )
+        ),
+        label(
+          cls := "block mb-1",
+          "rune: ",
+          input(
+            cls := "block text-black px-1 w-full",
+            onInput.mapToValue --> nextMinerRune.writer
+          )
+        ),
+        div(
+          cls := "mt-1 flex justify-end",
+          button(
+            cls := "p-1 pb-2 mt-2 bg-white text-black rounded-md shadow-lg",
+            disabled <-- Signal
+              .combine(
+                nextMinerPubKey.signal,
+                nextMinerHost.signal,
+                nextMinerRune.signal
+              )
+              .map(_ == "" || _ == "" || _ == ""),
+            "add"
+          )
+        )
+      )
+    )
 }
 
 case class MinerStatus(
