@@ -1,5 +1,4 @@
 import scala.util.{Success, Failure}
-import scala.collection.mutable.Map
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.Ordering.Implicits._
@@ -13,8 +12,14 @@ object Publish {
 
   var overseerURL: String = ""
 
-  // { bmmHash: block }
-  val pendingPublishedBlocks: Map[ByteVector32, ByteVector] = Map.empty
+  // (bitcoinTxSpent, { bmmHash: block } )
+  //   this thing is a tuple so we can more easily keep track of where we are.
+  //   every time we save one pending block we check if there are already other
+  //     blocks pending for that same bitcoinTxSpent, if yes we can add to the
+  //     same map, otherwise we can delete whatever we had before -- since that
+  //     block is already gone -- and create a new tuple.
+  var pendingPublishedBlocks: (String, Map[ByteVector32, ByteVector]) =
+    ("", Map.empty)
 
   // this is just informative and not used or relied upon
   var lastBitcoinTx: Option[String] = None
@@ -72,7 +77,7 @@ object Publish {
           s"not enough unreserved and confirmed outputs to pay fee of $fee"
         )
 
-      Psbt(
+      val patchedPsbt = Psbt(
         nextPsbt.global.tx
           .copy(
             txIn = List(
@@ -108,11 +113,20 @@ object Publish {
               TxOut(inputSum - fee, ourScriptPubKey)
             )
           )
-      )
-        .pipe(interm =>
-          interm.copy(inputs = nextPsbt.inputs(0) +: interm.inputs.drop(1))
-        )
-        .pipe(Psbt.toBase64(_))
+      ).pipe(pp => pp.copy(inputs = nextPsbt.inputs(0) +: pp.inputs.drop(1)))
+
+      // save these as an attempted tx-block publish
+      val bitcoinTxSpent = patchedPsbt.global.tx.txIn(0).outPoint.txid.toHex
+      pendingPublishedBlocks = pendingPublishedBlocks match {
+        case (btxid, blocks) if btxid == bitcoinTxSpent =>
+          (btxid, blocks + (blockHash -> block))
+        case _ =>
+          (bitcoinTxSpent, Map(blockHash -> block))
+      }
+      Datastore.storePendingBlocks()
+
+      // return the patched psbt ready for CLN to sign as base64
+      Psbt.toBase64(patchedPsbt)
     }
 
     for {
@@ -127,10 +141,6 @@ object Publish {
       )
       signedPsbt <- rpc("signpsbt", ujson.Obj("psbt" -> psbt))
         .map(_("signed_psbt").str)
-
-      // save these as an attempted tx-block publish
-      _ = { pendingPublishedBlocks += (blockHash -> block) }
-      _ <- Datastore.storePendingBlocks()
 
       res <- rpc("sendpsbt", ujson.Obj("psbt" -> signedPsbt))
       _ = logger.debug.item("res", res).msg("")

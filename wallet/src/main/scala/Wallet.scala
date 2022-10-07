@@ -102,7 +102,7 @@ object Wallet {
             pk <- Keys.pubkey.value.get
             sk <- Keys.privkey.value.get
           } yield {
-            val tx = buildTx(asset, pk, 1, sk)
+            val tx = buildTx(asset, pk, 0, sk)
             Main.txToMine.set(Some(Tx.codec.encode(tx).require.toHex))
             mintingAsset.set(None)
           }

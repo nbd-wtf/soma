@@ -70,28 +70,40 @@ object Datastore {
         case Success(Some(v: ujson.Obj)) =>
           logger.info.item(v).msg("loaded pending blocks")
 
-          v.value.foreach { (bmmHashHex, value) =>
-            for {
-              blockHex <- value.strOpt
-              bmmHash <- ByteVector.fromHex(bmmHashHex)
-              if bmmHash.size == 32
-              bmmHash32 = ByteVector32(bmmHash)
-              block <- ByteVector.fromHex(blockHex)
-            } yield {
-              Publish.pendingPublishedBlocks += bmmHash32 -> block
+          val bitcoinTxSpent = v("bitcoinTxSpent").str
+          val blocks = v("blocks").obj.value
+            .map { (bmmHashHex, value) =>
+              for {
+                blockHex <- value.strOpt
+                bmmHash <- ByteVector.fromHex(bmmHashHex)
+                if bmmHash.size == 32
+                bmmHash32 = ByteVector32(bmmHash)
+                block <- ByteVector.fromHex(blockHex)
+              } yield {
+                bmmHash32 -> block
+              }
             }
-          }
+            .collect { case Some(t) => t }
+            .toMap
+
+          Publish.pendingPublishedBlocks = (bitcoinTxSpent, blocks)
       }
       .map(_ => ())
 
-  def storePendingBlocks(): Future[Unit] =
+  def storePendingBlocks(): Future[Unit] = {
+    val (bitcoinTxSpent, blocks) = Publish.pendingPublishedBlocks
+
     writeJSON(
       pendingBlocksKey,
-      ujson.Obj.from(
-        Publish.pendingPublishedBlocks.toList
-          .map((bmmHash, block) => (bmmHash.toHex, block.toHex))
+      ujson.Obj(
+        "bitcoinTxSpent" -> bitcoinTxSpent,
+        "blocks" -> ujson.Obj.from(
+          blocks.toList
+            .map((bmmHash, block) => (bmmHash.toHex, block.toHex))
+        )
       )
     )
+  }
 
   // ~
   // utils

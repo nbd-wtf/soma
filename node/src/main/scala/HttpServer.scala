@@ -196,7 +196,6 @@ object HttpServer {
               }
 
             case "registerblock" =>
-              println(s"registering block")
               // we scan the bitcoin chain until the to make sure we have all the bmm hashes before trying to insert
               BitcoinManager.start().map { _ =>
                 (for {
@@ -207,6 +206,7 @@ object HttpServer {
                     .toOption
                   block = res.value
 
+                  _ = println(s"registering block ${block.hash}: $block")
                   height <- Database.insertBlock(block.hash, block)
                 } yield {
                   // notify our peers that we have this block now
@@ -223,7 +223,9 @@ object HttpServer {
 
                   ujson.Obj("ok" -> true, "hash" -> block.hash.toHex)
                 }).getOrElse {
-                  println(s"failed to register block")
+                  println(
+                    s"failed to register block (it was probably already registered)"
+                  )
                   ujson.Obj("ok" -> false)
                 }
               }

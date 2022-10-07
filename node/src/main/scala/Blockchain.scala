@@ -1,11 +1,12 @@
 import scodec.bits.ByteVector
-import scoin.{Crypto, ByteVector32, ByteVector64}
+import scoin.{randomBytes32, ByteVector32, ByteVector64}
 import openchain._
 
 object Blockchain {
   def makeBlock(
       txs: Seq[Tx],
-      parent: Option[ByteVector32] = None
+      parent: Option[ByteVector32] = None,
+      arbitrary: Option[ByteVector32] = None
   ): Either[String, Block] =
     if (!validateTxs(txs.toSet))
       Left("one or more of the transaction is invalid")
@@ -18,7 +19,11 @@ object Blockchain {
         )
         .getOrElse(ByteVector32.Zeroes) // default to 32 zeroes
       val block = Block(
-        header = BlockHeader(previous, Tx.merkleRoot(txs)),
+        header = BlockHeader(
+          previous,
+          Tx.merkleRoot(txs),
+          arbitrary.getOrElse(randomBytes32())
+        ),
         txs = txs.toList
       )
       Right(block)
@@ -40,7 +45,7 @@ object Blockchain {
       tx.counter
     )
     val isNewAsset =
-      tx.counter == 1 && Database.verifyAssetDoesntExist(tx.asset)
+      tx.counter == 0 && Database.verifyAssetDoesntExist(tx.asset)
     val assetNotBeingTransactedAlready =
       !otherTxsInTheBlock.exists(_.asset == tx.asset)
 

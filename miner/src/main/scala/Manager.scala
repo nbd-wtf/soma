@@ -34,7 +34,7 @@ object Manager {
   def onBlock_(bitcoinHeight: Int): Future[Unit] = {
     logger.debug
       .item("latest", latestSeen)
-      .item("pending-blocks", Publish.pendingPublishedBlocks.keySet)
+      .item("pending-blocks", Publish.pendingPublishedBlocks._2.keySet)
       .msg("checking if the bmm chain has advanced")
 
     // check if new blocks were mined in the parallel chain
@@ -51,8 +51,8 @@ object Manager {
             bmm.hash match {
               case None => logger.debug.msg("no hash on this bmm tx")
               case Some(bmmHash)
-                  if Publish.pendingPublishedBlocks.contains(bmmHash) =>
-                val block = Publish.pendingPublishedBlocks(bmmHash)
+                  if Publish.pendingPublishedBlocks._2.contains(bmmHash) =>
+                val block = Publish.pendingPublishedBlocks._2(bmmHash)
                 logger.debug
                   .item("hash", bmmHash)
                   .item("block", block.toHex)
@@ -74,6 +74,7 @@ object Manager {
                     )
                   case Some(block) =>
                     logger.debug.item(block).msg("the block we just registered")
+
                     val txs = block("txs").arr.map(tx => tx("id").str)
                     pendingTransactions.filterInPlace { case (id, _) =>
                       if (txs.contains(id)) {
@@ -84,7 +85,8 @@ object Manager {
                         // settle the payment
                         pendingHtlcs
                           .get(id)
-                          .map(_.success(true))
+                          .foreach(_.success(true))
+                        pendingHtlcs.remove(id)
 
                         false // exclude it from the list of pending
                       } else {
@@ -117,23 +119,23 @@ object Manager {
 
             // give some time for the node to process the new block (if any)
             Timer.timeout(15.seconds) { () =>
-              filterOutTransactionsNotValidAnymore()
+              filterOutTransactionsNotValidAnymore().andThen { _ =>
+                // after we've gone through all the latest bmms
+                //   in principle our pending transactions are still valid,
+                //   so we try to publish a block again
+                if (pendingTransactions.size > 0)
+                  logger.debug
+                    .item("pending", pendingTransactions)
+                    .msg(
+                      "we still have pending transactions, try to publish a new block"
+                    )
 
-              // after we've gone through all the latest bmms
-              //   in principle our pending transactions are still valid,
-              //   so we try to publish a block again
-              if (pendingTransactions.size > 0)
-                logger.debug
-                  .item("pending", pendingTransactions)
-                  .msg(
-                    "we still have pending transactions, try to publish a new block"
-                  )
-
-                publishBlock().onComplete {
-                  case Success(_) =>
-                  case Failure(err) =>
-                    logger.warn.item(err).msg("failed to publish")
-                }
+                  publishBlock().onComplete {
+                    case Success(_) =>
+                    case Failure(err) =>
+                      logger.warn.item(err).msg("failed to publish")
+                  }
+              }
             }
           }
       }
@@ -141,28 +143,44 @@ object Manager {
     Future {}
   }
 
-  def filterOutTransactionsNotValidAnymore(): Unit = {
+  def filterOutTransactionsNotValidAnymore(): Future[Unit] = {
+    // we'll wait for all futures to be completed
+    val done = Promise[Unit]()
+    var pendingFutures = pendingTransactions.size
+
     // check which of our pending transactions are still valid
     //   and fail the lightning payments corresponding to the invalid ones
-    pendingTransactions.foreach { case (txid, (tx, _, _)) =>
-      Node.validateTx(tx).onComplete {
-        case Success((_, ok)) if ok =>
-          logger.info
-            .item("tx", txid)
-            .msg(
-              "transaction still valid, keeping it and trying again in the next block"
-            )
-        case _ =>
-          logger.info
-            .item("tx", txid)
-            .msg("transaction not valid anymore, dropping it")
-          pendingHtlcs
-            .get(txid)
-            .map(_.success(false))
-          pendingTransactions.remove(txid)
-          Datastore.storePendingTransactions()
-      }
+    val futures = pendingTransactions.map { case (txid, (tx, _, _)) =>
+      Node
+        .validateTx(tx)
+        .andThen { _ =>
+          pendingFutures -= 1
+          if (pendingFutures == 0)
+            Future { done.success(()) }
+        }
+        .onComplete {
+          case Success((_, ok)) if ok =>
+            logger.info
+              .item("tx", txid)
+              .msg(
+                "transaction still valid, keeping it and trying again in the next block"
+              )
+          case _ =>
+            logger.info
+              .item("tx", txid)
+              .msg("transaction not valid anymore, dropping it")
+
+            pendingHtlcs
+              .get(txid)
+              .map(_.success(false))
+            pendingHtlcs.remove(txid)
+
+            pendingTransactions.remove(txid)
+            Datastore.storePendingTransactions()
+        }
     }
+
+    done.future
   }
 
   def filterOutTransactionsOverTheThreshold(bitcoinHeight: Int): Unit = {
@@ -294,9 +312,12 @@ object Manager {
                     .msg(
                       "failed to publish bmm hash, rejecting this transaction"
                     )
+
                   pendingTransactions.remove(txid)
                   Datastore.storePendingTransactions()
+
                   promise.failure(err)
+                  pendingHtlcs.remove(txid)
 
                 case Success(_) =>
               }

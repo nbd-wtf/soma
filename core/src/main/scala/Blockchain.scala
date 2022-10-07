@@ -17,14 +17,19 @@ object Block {
       ("txs" | list(Tx.codec))).as[Block]
 }
 
-case class BlockHeader(previous: ByteVector32, merkleRoot: ByteVector32) {
-  def hash: ByteVector32 = Crypto.sha256(previous ++ merkleRoot)
+case class BlockHeader(
+    previous: ByteVector32,
+    merkleRoot: ByteVector32,
+    arbitrary: ByteVector32
+) {
+  def hash: ByteVector32 = Crypto.sha256(previous ++ merkleRoot ++ arbitrary)
 }
 
 object BlockHeader {
   val codec: Codec[BlockHeader] =
     (("previous" | bytes32) ::
-      ("merkleRoot" | bytes32)).as[BlockHeader]
+      ("merkleRoot" | bytes32) ::
+      ("arbitrary" | bytes32)).as[BlockHeader]
 }
 
 case class Tx(
