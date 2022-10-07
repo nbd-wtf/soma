@@ -14,7 +14,7 @@ lazy val core = crossProject(JVMPlatform, JSPlatform, NativePlatform)
   .settings(
     name := "openchain-core",
     libraryDependencies ++= Seq(
-      "com.fiatjaf" %%% "scoin" % "0.4.0-SNAPSHOT"
+      "com.fiatjaf" %%% "scoin" % "0.4.0"
     )
   )
   .in(file("core"))
