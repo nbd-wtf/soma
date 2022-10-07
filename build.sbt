@@ -68,7 +68,10 @@ lazy val wallet = project
     Compile / npmDependencies ++= Seq(
       "kjua" -> "0.9.0"
     ),
-    esbuildOptions += "--target=es2020",
+    esbuildOptions ++= Seq(
+      "--target=es2020",
+      s"""--define:NODE_URL="${sys.props.getOrElse("defaultNodeUrl", default = "127.0.0.1:9036")}""""
+    ),
     esPackageManager := Yarn,
     scalaJSLinkerConfig ~= { _.withModuleKind(ModuleKind.CommonJSModule) },
     resolvers += "s01" at "https://s01.oss.sonatype.org/content/repositories/snapshots/"
@@ -91,6 +94,9 @@ lazy val explorer = project
 
       // use these until everybody updates to scala-3.2.0
       "org.typelevel" %%% "cats-core" % "2.9-826466b-SNAPSHOT",
+    ),
+    esbuildOptions ++= Seq(
+      s"""--define:NODE_URL="${sys.props.getOrElse("defaultNodeUrl", default = "127.0.0.1:9036")}""""
     ),
     esPackageManager := Yarn,
     scalaJSLinkerConfig ~= { _.withModuleKind(ModuleKind.CommonJSModule) },

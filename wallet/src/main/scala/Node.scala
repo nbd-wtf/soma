@@ -1,6 +1,8 @@
 import scala.concurrent.Future
+import scala.scalajs.js
 import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
 import sttp.client3._
+import sttp.model.Uri
 import io.circe._
 import io.circe.syntax._
 import io.circe.parser._
@@ -24,7 +26,7 @@ object Node {
       params: Map[String, Json] = Map.empty
   ): Future[io.circe.Json] =
     basicRequest
-      .post(uri"http://127.0.0.1:9036/")
+      .post(Uri(js.Dynamic.global.NODE_URL.asInstanceOf[String]))
       .body(
         Map[String, Json](
           "method" -> method.asJson,

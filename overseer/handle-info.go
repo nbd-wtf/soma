@@ -19,7 +19,7 @@ func handleInfo(w http.ResponseWriter, r *http.Request) {
 	var genesis string
 	if err := db.Get(
 		&genesis,
-		"SELECT txid FROM chain_block_tx WHERE idx = 0",
+		"SELECT txid FROM chain_block_tx LIMIT 1",
 	); err != nil {
 		w.WriteHeader(404)
 		json.NewEncoder(w).Encode(struct {
