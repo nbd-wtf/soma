@@ -65,7 +65,7 @@ object BlockView {
           cls := cellClass,
           styleAttr := "width: 735px",
           a(
-            href := s"https://mempool.space/tx/${bmm.txid}",
+            href := s"${Main.txExplorerUrl}${bmm.txid}",
             target := "_blank",
             cls := "text-sky-700 hover:text-sky-500",
             s"${bmm.txid}"

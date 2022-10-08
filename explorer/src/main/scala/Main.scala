@@ -1,5 +1,8 @@
+import scala.util.{Try, Success}
+import scala.scalajs.js
 import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
 import org.scalajs.dom
+import sttp.model.Uri
 import com.raquo.laminar.api.L._
 import openchain._
 
@@ -25,5 +28,13 @@ object Main {
 
   AirstreamError.registerUnhandledErrorCallback { err =>
     println(s"airstream unhandled error: $err")
+  }
+
+  val txExplorerUrl = Try(
+    Uri.parse(dom.window.localStorage.getItem("txExplorerUrl"))
+  ) match {
+    case Success(Right(s)) => s
+    case _ =>
+      Uri.unsafeParse(js.Dynamic.global.TX_EXPLORER_URL.asInstanceOf[String])
   }
 }

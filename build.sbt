@@ -9,6 +9,9 @@ ThisBuild / tlSonatypeUseLegacyHost := false
 
 Global / onChangedBuildSource := ReloadOnSourceChanges
 
+val defaultNodeUrl = sys.props.getOrElse("defaultNodeUrl", default = "127.0.0.1:9036")
+val defaultTxExplorerUrl = sys.props.getOrElse("defaultTxExplorerUrl", default = "https://mempool.space/tx/")
+
 lazy val core = crossProject(JVMPlatform, JSPlatform, NativePlatform)
   .crossType(CrossType.Pure)
   .settings(
@@ -70,7 +73,8 @@ lazy val wallet = project
     ),
     esbuildOptions ++= Seq(
       "--target=es2020",
-      s"""--define:NODE_URL="${sys.props.getOrElse("defaultNodeUrl", default = "127.0.0.1:9036")}""""
+      s"""--define:NODE_URL="${defaultNodeUrl}"""",
+      s"""--define:TX_EXPLORER_URL="${defaultTxExplorerUrl}""""
     ),
     esPackageManager := Yarn,
     scalaJSLinkerConfig ~= { _.withModuleKind(ModuleKind.CommonJSModule) },
@@ -96,7 +100,8 @@ lazy val explorer = project
       "org.typelevel" %%% "cats-core" % "2.9-826466b-SNAPSHOT",
     ),
     esbuildOptions ++= Seq(
-      s"""--define:NODE_URL="${sys.props.getOrElse("defaultNodeUrl", default = "127.0.0.1:9036")}""""
+      s"""--define:NODE_URL="${defaultNodeUrl}"""",
+      s"""--define:TX_EXPLORER_URL="${defaultTxExplorerUrl}""""
     ),
     esPackageManager := Yarn,
     scalaJSLinkerConfig ~= { _.withModuleKind(ModuleKind.CommonJSModule) },

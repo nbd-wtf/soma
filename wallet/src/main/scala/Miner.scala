@@ -137,7 +137,7 @@ case class Miner(pubkey: String, host: String, rune: String) {
             _.last_published_txid
               .map(txid =>
                 a(
-                  href := s"https://mempool.space/tx/$txid",
+                  href := s"${Main.txExplorerUrl}$txid",
                   target := "_blank",
                   cls := "text-lg text-sky-100 hover:text-sky-300",
                   s"${txid.take(4)}...${txid.takeRight(4)}"

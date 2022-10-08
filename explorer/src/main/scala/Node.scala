@@ -1,6 +1,8 @@
 import scala.concurrent.Future
+import scala.util.{Try, Success}
 import scala.scalajs.js
 import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
+import org.scalajs.dom
 import sttp.client3._
 import sttp.model.Uri
 import io.circe._
@@ -35,7 +37,7 @@ object Node {
       params: Map[String, Json] = Map.empty
   ): Future[io.circe.Json] =
     basicRequest
-      .post(Uri(js.Dynamic.global.NODE_URL.asInstanceOf[String]))
+      .post(nodeUrl)
       .body(
         Map[String, Json](
           "method" -> method.asJson,
@@ -46,6 +48,14 @@ object Node {
       .map(_.body.toOption.get)
       .map(parse(_).toTry.get)
       .map(_.hcursor.downField("result").as[Json].toTry.get)
+
+  def nodeUrl = Try(
+    Uri.parse(dom.window.localStorage.getItem("nodeUrl"))
+  ) match {
+    case Success(Right(s)) => s
+    case _ =>
+      Uri.unsafeParse(js.Dynamic.global.NODE_URL.asInstanceOf[String])
+  }
 }
 
 case class NodeInfo(

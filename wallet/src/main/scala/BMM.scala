@@ -10,7 +10,6 @@ import io.circe.syntax._
 import io.circe.parser._
 
 object BMM {
-
   def render(): HtmlElement =
     div(
       cls := "mr-3 py-3 px-4 my-3 bg-orange-700 text-white rounded-md shadow-lg w-auto",
@@ -26,7 +25,7 @@ object BMM {
           child <-- Main.info.map(
             _.latestBmmTx.txid.pipe(txid =>
               a(
-                href := s"https://mempool.space/tx/$txid",
+                href := s"${Main.txExplorerUrl}$txid",
                 target := "_blank",
                 cls := "text-lg text-sky-100 hover:text-sky-300",
                 s"${txid.take(4)}...${txid.takeRight(4)}"
