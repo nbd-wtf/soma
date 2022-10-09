@@ -9,6 +9,7 @@ object Picklers {
     writer[ujson.Value].comap[Block](b =>
       ujson.Obj(
         "id" -> writeJs(b.hash),
+        "height" -> writeJs(b.height.toInt),
         "header" -> writeJs(b.header),
         "txs" -> writeJs(b.txs)
       )

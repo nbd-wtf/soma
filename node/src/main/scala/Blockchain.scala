@@ -12,15 +12,23 @@ object Blockchain {
       Left("one or more of the transaction is invalid")
     else {
       val previous = parent
+        .flatMap(Database.getBlock(_))
         .orElse(
           Database
             .getLatestKnownBlock()
-            .map { case (_, block) => block.hash }
+            .map { case (_, block) => block }
         )
+
+      val previousHash = previous
+        .map(_.hash)
         .getOrElse(ByteVector32.Zeroes) // default to 32 zeroes
+
+      val previousHeight = previous.map(_.height).getOrElse(0L)
+
       val block = Block(
+        previousHeight + 1,
         header = BlockHeader(
-          previous,
+          previousHash,
           Tx.merkleRoot(txs),
           arbitrary.getOrElse(randomBytes32())
         ),
@@ -30,9 +38,20 @@ object Blockchain {
     }
 
   def validateBlock(block: Block): Boolean =
+    // block doesn't mint more assets than it should
     block.txs.filter(_.isNewAsset).size <= Block.MaxMintsPerBlock &&
+      // all transactions are valid
       validateTxs(block.txs.toSet) &&
-      block.header.merkleRoot == Tx.merkleRoot(block.txs)
+      // merkle root is valid
+      block.header.merkleRoot == Tx.merkleRoot(block.txs) &&
+      // block height is valid
+      (
+        block.height == 1 && block.header.previous == ByteVector32.Zeroes ||
+          Database
+            .getBlockHeight(block.header.previous)
+            .map(_ + 1 == block.height)
+            .getOrElse(false)
+      )
 
   def validateTxs(txs: Set[Tx]): Boolean =
     txs.forall(thisTx =>

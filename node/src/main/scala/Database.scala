@@ -154,7 +154,7 @@ object Database {
 
   private lazy val getBlockStmt =
     db.prepare("SELECT block FROM blocks WHERE bmmHash = ?")
-  def getBlock(bmmHash: ByteVector): Option[Block] =
+  def getBlock(bmmHash: ByteVector32): Option[Block] =
     asBlockOpt(getBlockStmt.get(bmmHash))
 
   private lazy val getBlockAtHeightStmt =
@@ -190,32 +190,20 @@ object Database {
     db.prepare(
       "UPDATE blocks SET block = ?, blockheight = ? WHERE bmmhash = ? AND block IS NULL RETURNING 1"
     )
-  def insertBlock(hash: ByteVector32, block: Block): Option[Int] = {
-    val height: Option[Int] =
-      if block.header.previous == ByteVector32.Zeroes then Some(1)
-      else
-        getBlockHeight(block.header.previous)
-          .map(_ + 1)
-
-    println(s"h: $height")
-
-    height.flatMap { h =>
-      Block.codec
-        .encode(block)
-        .toOption
-        .flatMap { bs =>
-          val r = insertBlockStmt
-            .get(
-              bs.toByteVector,
-              h,
-              hash.bytes.toUint8Array
-            )
-          r.toOption
-
-          // TODO update all blockheight of the following bmm blocks that match this one recursively
-        }
-        .flatMap(_ => height)
-    }
+  def insertBlock(hash: ByteVector32, block: Block): Boolean = {
+    Block.codec
+      .encode(block)
+      .toOption
+      .flatMap { bs =>
+        val r = insertBlockStmt
+          .get(
+            bs.toByteVector,
+            block.height,
+            hash.bytes.toUint8Array
+          )
+        r.toOption
+      }
+      .isDefined
   }
 
   private lazy val getBlockHeightStmt =
@@ -331,28 +319,28 @@ object Database {
   def processBlock(height: Int, block: Block): Unit = {
     db.exec("BEGIN TRANSACTION")
 
-    var nextAssetToMint =
-      height * Block.MaxMintsPerBlock
-
     println(s"processing block ${block.hash}")
     updateCurrentTipStmt.run(block.hash, 1, block.hash)
 
-    block.txs.foreach { tx =>
-      if (tx.isNewAsset) {
-        println(
-          s"  ~ tx ${tx.hash.toHex
-              .take(5)}: ${nextAssetToMint} minted to ${tx.to.toHex.take(5)}"
-        )
-        mintAssetStmt.run(tx.to, nextAssetToMint)
-        nextAssetToMint += 1
-      } else {
-        println(
-          s"  ~ tx ${tx.hash.toHex.take(5)}: ${tx.asset} from ${tx.from.toHex
-              .take(5)} to ${tx.to.toHex.take(5)}"
-        )
-        updateAssetOwnershipStmt.run(tx.to, tx.counter + 1, tx.asset)
+    block.txs
+      .zip(
+        List.range[Int](height * Block.MaxMintsPerBlock, block.txs.size)
+      )
+      .map { case (tx: Tx, index: Int) =>
+        if (tx.isNewAsset) {
+          println(
+            s"  ~ tx ${tx.hash.toHex
+                .take(5)}: ${index.toHexString} minted to ${tx.to.toHex.take(5)}"
+          )
+          mintAssetStmt.run(tx.to, index)
+        } else {
+          println(
+            s"  ~ tx ${tx.hash.toHex.take(5)}: ${tx.asset.toHexString} from ${tx.from.toHex
+                .take(5)} to ${tx.to.toHex.take(5)}"
+          )
+          updateAssetOwnershipStmt.run(tx.to, tx.counter + 1, tx.asset)
+        }
       }
-    }
 
     db.exec("COMMIT")
   }
@@ -387,6 +375,7 @@ sealed trait SQLiteValue extends js.Any
 object SQLiteValue {
   implicit def fromDouble(x: Double): SQLiteValue = x.asInstanceOf[SQLiteValue]
   implicit def fromInt(x: Int): SQLiteValue = x.toDouble
+  implicit def fromLong(x: Long): SQLiteValue = x.toDouble
   implicit def fromString(x: String): SQLiteValue = x.asInstanceOf[SQLiteValue]
   implicit def fromBoolean(x: Boolean): SQLiteValue =
     x.asInstanceOf[SQLiteValue]

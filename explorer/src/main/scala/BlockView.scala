@@ -96,14 +96,16 @@ object BlockView {
             ),
             div(
               b(cls := "text-lg mt-2", "transactions"),
-              block.txs.zipWithIndex.map((tx, i) => renderTransaction(tx, i))
+              block.txs.zipWithIndex.map((tx, i) =>
+                renderTransaction(block.height, tx, i)
+              )
             )
           )
         case _ => div()
       }
     )
 
-  def renderTransaction(tx: Tx, index: Int): HtmlElement = {
+  def renderTransaction(blockHeight: Long, tx: Tx, index: Int): HtmlElement = {
     def attr(name: String, value: String, color: String) =
       div(
         cls := "w-full mx-2",
@@ -117,15 +119,19 @@ object BlockView {
     div(
       cls := "my-2 py-3 px-1 border-2",
       div(
-        cls := "flex w-full",
-        styleAttr := "max-width: 48%",
-        attr("id", tx.hash.toHex, "gray"),
-        attr("asset", tx.asset.toHexString, "indigo")
+        "flex w-full justify-center uppercase text-amber-800",
+        if tx.isNewAsset then "mint" else "transfer"
       ),
       div(
         cls := "flex w-full",
         styleAttr := "max-width: 48%",
-        if tx.isNewAsset then div("NEW")
+        attr("id", tx.hash.toHex, "gray"),
+        attr("asset", tx.assetName(blockHeight, index), "indigo")
+      ),
+      div(
+        cls := "flex w-full",
+        styleAttr := "max-width: 48%",
+        if tx.isNewAsset then div()
         else attr("from", tx.from.toHex, "yellow"),
         attr("to", tx.to.toHex, "green")
       )

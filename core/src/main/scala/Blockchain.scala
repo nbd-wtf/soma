@@ -7,7 +7,7 @@ import scodec.Codec
 import scoin.{Crypto, ByteVector32, ByteVector64}
 import scoin.CommonCodecs.{bytes32, bytes64, xonlypublickey}
 
-case class Block(header: BlockHeader, txs: List[Tx]) {
+case class Block(height: Long, header: BlockHeader, txs: List[Tx]) {
   def hash: ByteVector32 = header.hash
 }
 
@@ -15,7 +15,8 @@ object Block {
   val MaxMintsPerBlock = 500
 
   val codec: Codec[Block] =
-    (("header" | BlockHeader.codec) ::
+    (("height" | uint32) ::
+      ("header" | BlockHeader.codec) ::
       ("txs" | list(Tx.codec))).as[Block]
 }
 
@@ -46,6 +47,10 @@ case class Tx(
 
   // to mind a new asset, make blank transaction
   def isNewAsset = counter == 0 && asset == 0
+
+  def assetName(blockHeight: Long, txIndex: Int): String =
+    if !isNewAsset then asset.toHexString
+    else (blockHeight * Block.MaxMintsPerBlock + txIndex).toHexString
 
   private def messageToSign: ByteVector = Tx.codec
     .encode(copy(signature = ByteVector64.Zeroes))

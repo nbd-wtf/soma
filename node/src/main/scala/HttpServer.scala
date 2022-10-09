@@ -86,7 +86,9 @@ object HttpServer {
               Future {
                 ((params.obj.get("hash"), params.obj.get("height")) match {
                   case (Some(hash), _) =>
-                    Database.getBlock(ByteVector.fromValidHex(hash.str))
+                    Database.getBlock(
+                      ByteVector32(ByteVector.fromValidHex(hash.str))
+                    )
                   case (_, Some(height)) =>
                     Database.getBlockAtHeight(height.num.toInt)
                   case _ => throw new Exception("provide either hash or height")
@@ -209,21 +211,23 @@ object HttpServer {
                   block = res.value
 
                   _ = println(s"registering block ${block.hash}: $block")
-                  height <- Database.insertBlock(block.hash, block)
+                  ok = Database.insertBlock(block.hash, block)
                 } yield {
-                  // notify our peers that we have this block now
-                  PeerManager.sendAll(
-                    WireMessage.codec
-                      .encode(AnswerBlock(block.hash, Some(block)))
-                      .require
-                      .bytes
-                  )
-                  println(s"block registered at height $height")
+                  if (ok) {
+                    // notify our peers that we have this block now
+                    PeerManager.sendAll(
+                      WireMessage.codec
+                        .encode(AnswerBlock(block.hash, Some(block)))
+                        .require
+                        .bytes
+                    )
+                    println(s"block registered at height ${block.height}")
 
-                  // restarting state manager, it will do the right thing
-                  StateManager.start()
+                    // restarting state manager, it will do the right thing
+                    StateManager.start()
+                  }
 
-                  ujson.Obj("ok" -> true, "hash" -> block.hash.toHex)
+                  ujson.Obj("ok" -> ok, "hash" -> block.hash.toHex)
                 }).getOrElse {
                   println(
                     s"failed to register block (it was probably already registered)"

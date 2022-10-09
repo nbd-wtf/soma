@@ -70,13 +70,13 @@ object PeerManager {
 
           case AnswerBlock(hash, Some(block)) =>
             Database.insertBlock(hash, block) match {
-              case Some(height) =>
-                println(s"block inserted at height $height")
+              case true =>
+                println(s"block inserted at height ${block.height}")
 
                 // restarting state manager, it will do the right thing
                 StateManager.start()
 
-              case None => println("failed to insert")
+              case false => println("failed to insert")
             }
 
           case AnswerBlock(hash, None) => // peer doesn 't have this block
