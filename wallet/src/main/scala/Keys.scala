@@ -14,7 +14,6 @@ object Keys {
       .loadKey()
       .asInstanceOf[js.Promise[String]]
       .toFuture
-      .map(_.tap(println(_)))
       .map {
         case nothing if nothing == "" => {
           val k = Crypto.randomBytes(32).toHex

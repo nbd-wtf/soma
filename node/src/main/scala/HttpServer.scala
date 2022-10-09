@@ -97,9 +97,7 @@ object HttpServer {
             case "getassetowner" =>
               Future {
                 Database
-                  .getAssetOwner(
-                    ByteVector32(ByteVector.fromValidHex(params("asset").str))
-                  )
+                  .getAssetOwner(params("asset").num.toInt)
                   .map[ujson.Value](_.toHex)
                   .getOrElse(ujson.Null)
               }
@@ -115,7 +113,7 @@ object HttpServer {
                   )
                   .map((asset, counter) =>
                     ujson.Obj(
-                      "asset" -> asset.toHex,
+                      "asset" -> asset,
                       "counter" -> counter
                     )
                   )
@@ -124,7 +122,7 @@ object HttpServer {
               Future {
                 Database
                   .listAllAssets()
-                  .map((asset, owner) => (asset.toHex, owner.toHex))
+                  .map((asset, owner) => (asset.toHexString, owner.toHex))
               }
             case "decodeblock" =>
               Future {

@@ -38,19 +38,19 @@ object Blockchain {
       validateTx(thisTx, txs.filterNot(_ == thisTx).toSet) == true
     )
 
-  def validateTx(tx: Tx, otherTxsInTheBlock: Set[Tx] = Set.empty): Boolean = {
-    val ownerCorrect = Database.verifyAssetOwnerAndCounter(
-      tx.asset,
-      tx.from,
-      tx.counter
-    )
-    val isNewAsset =
-      tx.counter == 0 && Database.verifyAssetDoesntExist(tx.asset)
-    val assetNotBeingTransactedAlready =
-      !otherTxsInTheBlock.exists(_.asset == tx.asset)
+  def validateTx(tx: Tx, otherTxsInTheBlock: Set[Tx] = Set.empty): Boolean =
+    tx.isNewAsset || {
+      val ownerCorrect = Database.verifyAssetOwnerAndCounter(
+        tx.asset,
+        tx.from,
+        tx.counter
+      )
 
-    (ownerCorrect || isNewAsset) &&
-    assetNotBeingTransactedAlready &&
-    tx.signatureValid()
-  }
+      val assetNotBeingTransactedAlready =
+        !otherTxsInTheBlock.exists(_.asset == tx.asset)
+
+      ownerCorrect &&
+      assetNotBeingTransactedAlready &&
+      tx.signatureValid()
+    }
 }

@@ -7,6 +7,7 @@ import scala.scalajs.js.annotation.JSImport
 import scala.scalajs.js.typedarray.Uint8Array
 import scodec.bits.ByteVector
 import scoin.{Crypto, ByteVector32, ByteVector64}
+import scoin.Crypto.XOnlyPublicKey
 import openchain._
 
 object Database {
@@ -23,7 +24,7 @@ object Database {
       "CREATE TABLE IF NOT EXISTS current (k TEXT PRIMARY KEY, blockheight INT NOT NULL, bmmhash BLOB NOT NULL)"
     )
     db.exec(
-      "CREATE TABLE IF NOT EXISTS state (asset BLOB PRIMARY KEY, owner BLOB NOT NULL, counter INT NOT NULL)"
+      "CREATE TABLE IF NOT EXISTS state (asset INT PRIMARY KEY, owner BLOB NOT NULL, counter INT NOT NULL)"
     )
   }
 
@@ -245,56 +246,39 @@ object Database {
     "SELECT 1 FROM state WHERE asset = ? AND owner = ? AND counter = ?"
   )
   def verifyAssetOwnerAndCounter(
-      asset: ByteVector32,
-      owner: Crypto.XOnlyPublicKey,
+      asset: Int,
+      owner: XOnlyPublicKey,
       counter: Int
   ): Boolean =
     verifyAssetOwnerAndCounterStmt
       .get(asset, owner, counter)
       .isDefined
 
-  private lazy val verifyAssetDoesntExistStmt = db.prepare(
-    "SELECT 1 FROM state WHERE asset = ?"
-  )
-  def verifyAssetDoesntExist(asset: ByteVector32): Boolean =
-    verifyAssetDoesntExistStmt
-      .get(asset)
-      .isEmpty
-
   private lazy val getAccountAssetsStmt = db.prepare(
     "SELECT asset, counter FROM state WHERE owner = ?"
   )
   def getAccountAssets(
-      pubkey: Crypto.XOnlyPublicKey
-  ): List[(ByteVector32, Int)] =
+      pubkey: XOnlyPublicKey
+  ): List[(Int, Int)] =
     getAccountAssetsStmt
       .all(pubkey)
       .toList
       .map(row =>
         (
-          ByteVector32(
-            ByteVector
-              .fromUint8Array(
-                row.selectDynamic("asset").asInstanceOf[Uint8Array]
-              )
-          ),
+          row.selectDynamic("asset").asInstanceOf[Int],
           row.selectDynamic("counter").asInstanceOf[Int]
         )
       )
 
   private lazy val listAllAssetsStmt =
     db.prepare("SELECT asset, owner FROM state")
-  def listAllAssets(): List[(ByteVector32, Crypto.XOnlyPublicKey)] =
+  def listAllAssets(): List[(Int, XOnlyPublicKey)] =
     listAllAssetsStmt
       .all()
       .map(row =>
         (
-          ByteVector32(
-            ByteVector.fromUint8Array(
-              row.selectDynamic("asset").asInstanceOf[Uint8Array]
-            )
-          ),
-          Crypto.XOnlyPublicKey(
+          row.selectDynamic("asset").asInstanceOf[Int],
+          XOnlyPublicKey(
             ByteVector32(
               ByteVector.fromUint8Array(
                 row.selectDynamic("owner").asInstanceOf[Uint8Array]
@@ -308,7 +292,7 @@ object Database {
   private lazy val getAssetOwnerStmt = db.prepare(
     "SELECT owner FROM state WHERE asset = ?"
   )
-  def getAssetOwner(asset: ByteVector32): Option[Crypto.XOnlyPublicKey] =
+  def getAssetOwner(asset: Int): Option[XOnlyPublicKey] =
     getAssetOwnerStmt
       .get(asset)
       .toOption
@@ -317,7 +301,7 @@ object Database {
         ByteVector
           .fromUint8Array(_)
           .pipe(ByteVector32(_))
-          .pipe(Crypto.XOnlyPublicKey(_))
+          .pipe(XOnlyPublicKey(_))
       )
 
   private lazy val getCurrentTipStmt =
@@ -340,28 +324,39 @@ object Database {
     db.prepare(
       "INSERT INTO current (k, blockheight, bmmhash) VALUES ('processed', 1, ?) ON CONFLICT (k) DO UPDATE SET blockheight = blockheight + ?, bmmhash = ?"
     )
+  private lazy val getNextUnusedAssetIdStmt =
+    db.prepare("SELECT max(asset) + 1 AS n FROM state")
+  private lazy val mintAssetStmt =
+    db.prepare("INSERT INTO state (owner, asset, counter) VALUES (?, ?, 1)")
   private lazy val updateAssetOwnershipStmt =
-    db.prepare(
-      "INSERT INTO state (owner, asset, counter) VALUES (?, ?, 1) ON CONFLICT (asset) DO UPDATE SET owner = ?, counter = ? WHERE asset = ? AND counter = ?"
-    )
-
+    db.prepare("UPDATE state SET owner = ?, counter = ? WHERE asset = ?")
   def processBlock(block: Block): Unit = {
     db.exec("BEGIN TRANSACTION")
+
+    var nextAssetToMint =
+      getNextUnusedAssetIdStmt
+        .get()
+        .map(_.selectDynamic("n").asInstanceOf[Double].toInt)
+        .getOrElse(1)
 
     println(s"processing block ${block.hash}")
     updateCurrentTipStmt.run(block.hash, 1, block.hash)
 
     block.txs.foreach { tx =>
-      println(s"  ~ tx ${tx.hash.toHex.take(5)}: ${tx.asset.toHex
-          .take(5)} from ${tx.from.toHex.take(5)} to ${tx.to.toHex.take(5)}")
-      updateAssetOwnershipStmt.run(
-        tx.to,
-        tx.asset,
-        tx.to,
-        tx.counter + 1,
-        tx.asset,
-        tx.counter
-      )
+      if (tx.isNewAsset) {
+        println(
+          s"  ~ tx ${tx.hash.toHex
+              .take(5)}: ${nextAssetToMint} minted to ${tx.to.toHex.take(5)}"
+        )
+        mintAssetStmt.run(tx.to, nextAssetToMint)
+        nextAssetToMint += 1
+      } else {
+        println(
+          s"  ~ tx ${tx.hash.toHex.take(5)}: ${tx.asset} from ${tx.from.toHex
+              .take(5)} to ${tx.to.toHex.take(5)}"
+        )
+        updateAssetOwnershipStmt.run(tx.to, tx.counter + 1, tx.asset)
+      }
     }
 
     db.exec("COMMIT")
@@ -374,8 +369,10 @@ object Database {
     updateCurrentTipStmt.run(block.header.previous, -1, block.header.previous)
 
     block.txs.foreach { tx =>
-      println(s"  ~ tx ${tx.hash.toHex.take(5)}: ${tx.asset.toHex
-          .take(5)} from ${tx.from.toHex.take(5)} to ${tx.to.toHex.take(5)}")
+      println(
+        s"  ~ tx ${tx.hash.toHex.take(5)}: ${tx.asset} from ${tx.from.toHex
+            .take(5)} to ${tx.to.toHex.take(5)}"
+      )
       updateAssetOwnershipStmt.run(
         tx.from,
         tx.asset,
@@ -405,7 +402,7 @@ object SQLiteValue {
     x.bytes.toUint8Array
   implicit def fromByteVector64(x: ByteVector64): SQLiteValue =
     x.bytes.toUint8Array
-  implicit def fromXOnlyPublicKey(x: Crypto.XOnlyPublicKey): SQLiteValue =
+  implicit def fromXOnlyPublicKey(x: XOnlyPublicKey): SQLiteValue =
     x.value.bytes
   implicit def fromNull(x: Null): SQLiteValue = x.asInstanceOf[SQLiteValue]
 }

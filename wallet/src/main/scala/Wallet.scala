@@ -19,7 +19,6 @@ object Wallet {
     .combine(Main.info.changes, Keys.pubkey)
     .flatMap((info, pk) => EventStream.fromFuture(Node.getAssets(pk)))
 
-  val mintingAsset: Var[Option[ByteVector32]] = Var(None)
   val transferringAsset: Var[Option[(AssetInfo, Option[XOnlyPublicKey])]] =
     Var(None)
 
@@ -54,24 +53,28 @@ object Wallet {
           case None => div()
         }
       ),
-      child <-- Signal
-        .combine(transferringAsset.signal, mintingAsset.signal)
+      child <-- transferringAsset.signal
         .map {
-          case (None, None) =>
+          case None =>
             div(
               cls := "mt-3 flex justify-center",
               button(
                 cls := "p-1 pb-2 mt-2 bg-white text-black rounded-md shadow-lg",
                 onClick.preventDefault --> { _ =>
-                  mintingAsset.set(Some(ByteVector32(Crypto.randomBytes(32))))
-                  Main.txToMine.set(None)
+                  {
+                    for {
+                      pk <- Keys.pubkey.value.get
+                      sk <- Keys.privkey.value.get
+                    } yield {
+                      val tx = mintAsset(pk)
+                      Main.txToMine.set(Some(Tx.codec.encode(tx).require.toHex))
+                    }
+                  }
                 },
                 "mint new asset"
               )
             )
-          case (None, Some(asset)) =>
-            renderMintForm(asset)
-          case (Some((AssetInfo(asset, counter), to)), _) =>
+          case Some((AssetInfo(asset, counter), to)) =>
             renderTransferForm(asset, counter, to)
         }
     )
@@ -89,51 +92,15 @@ object Wallet {
             case _                             => Some(ai, None)
           }
         },
-        ai.asset.toHex
+        ai.asset.toHexString
       ),
       "\""
     )
 
   def renderMintForm(asset: ByteVector32): HtmlElement =
     form(
-      onSubmit.preventDefault --> { _ =>
-        {
-          for {
-            pk <- Keys.pubkey.value.get
-            sk <- Keys.privkey.value.get
-          } yield {
-            val tx = buildTx(asset, pk, 0, sk)
-            Main.txToMine.set(Some(Tx.codec.encode(tx).require.toHex))
-            mintingAsset.set(None)
-          }
-        }
-      },
-      label(
-        cls := "block",
-        "asset id: ",
-        input(
-          cls := "block text-black px-1 w-full",
-          defaultValue := mintingAsset.now().get.toHex,
-          onInput.mapToValue
-            .map[Option[ByteVector32]](hex =>
-              ByteVector
-                .fromHex(hex)
-                .flatMap(b =>
-                  if b.size == 32 then Some(ByteVector32(b)) else None
-                )
-            )
-            --> mintingAsset.writer
-        )
-      ),
       div(
-        cls := "mt-1 flex justify-between",
-        button(
-          cls := "p-1 pb-2 mt-2 bg-white text-black rounded-md shadow-lg",
-          onClick.preventDefault --> { _ =>
-            mintingAsset.set(Some(ByteVector32(Crypto.randomBytes(32))))
-          },
-          "random"
-        ),
+        cls := "mt-1 flex justify-end",
         button(
           cls := "p-1 pb-2 mt-2 bg-white text-black rounded-md shadow-lg",
           "mint"
@@ -142,7 +109,7 @@ object Wallet {
     )
 
   def renderTransferForm(
-      asset: ByteVector32,
+      asset: Int,
       counter: Int,
       to: Option[XOnlyPublicKey]
   ): HtmlElement =
@@ -156,7 +123,6 @@ object Wallet {
             sk.get
           )
           Main.txToMine.set(Some(Tx.codec.encode(tx).require.toHex))
-          mintingAsset.set(None)
         }
       },
       label(
@@ -165,7 +131,7 @@ object Wallet {
         input(
           cls := "block bg-gray-300 text-black px-1 w-full",
           readOnly := true,
-          defaultValue := asset.toHex
+          defaultValue := asset.toHexString
         )
       ),
       label(
@@ -196,7 +162,7 @@ object Wallet {
     )
 
   def buildTx(
-      asset: ByteVector32,
+      asset: Int,
       to: XOnlyPublicKey,
       counter: Int,
       privateKey: PrivateKey
@@ -206,4 +172,13 @@ object Wallet {
     from = privateKey.publicKey.xonly,
     counter = counter
   ).withSignature(privateKey)
+
+  def mintAsset(to: XOnlyPublicKey): Tx = Tx(
+    asset = 0,
+    to = to,
+    counter = 0,
+
+    // make this random so the tx id is random
+    from = XOnlyPublicKey(randomBytes32())
+  )
 }

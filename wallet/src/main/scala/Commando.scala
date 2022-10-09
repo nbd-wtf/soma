@@ -30,7 +30,6 @@ class Commando(nodeId: String, host: String, rune: String) {
           .hcursor
           .downField("result")
           .focus
-          .tap(println(_))
           .getOrElse(Json.Null)
       )
 }

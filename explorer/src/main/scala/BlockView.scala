@@ -120,12 +120,13 @@ object BlockView {
         cls := "flex w-full",
         styleAttr := "max-width: 48%",
         attr("id", tx.hash.toHex, "gray"),
-        attr("asset", tx.asset.toHex, "indigo")
+        attr("asset", tx.asset.toHexString, "indigo")
       ),
       div(
         cls := "flex w-full",
         styleAttr := "max-width: 48%",
-        attr("from", tx.from.toHex, "yellow"),
+        if tx.isNewAsset then div("NEW")
+        else attr("from", tx.from.toHex, "yellow"),
         attr("to", tx.to.toHex, "green")
       )
     )

@@ -48,7 +48,7 @@ case class Miner(pubkey: String, host: String, rune: String) {
                   .downField("status")
                   .as[String]
                   .toTry
-                  .getOrElse("unexpected")
+                  .getOrElse("holding")
               )
           )
         },

@@ -26,6 +26,7 @@ var script []byte
 var (
 	configDir, _ = homedir.Expand("~/.config/openchain/wallet")
 	keysFile     = path.Join(configDir, "key")
+	_            = os.MkdirAll(configDir, 0700)
 )
 
 func main() {
@@ -99,7 +100,10 @@ func storeKey(key string) {
 	if err != nil {
 		panic(err)
 	}
-	os.WriteFile(keysFile, b, 0644)
+	err = os.WriteFile(keysFile, b, 0644)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func loadKey() string {

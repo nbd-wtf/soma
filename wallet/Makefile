@@ -1,4 +1,4 @@
-files = $(shell find . -name "*.go")
+files = target/esbuild/bundle.js $(shell find . -name "*.go")
 
 all: dist/wallet_linux_x64 dist/wallet_darwin_arm dist/wallet_darwin_x64 dist/wallet.exe
 

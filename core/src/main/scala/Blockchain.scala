@@ -34,7 +34,7 @@ object BlockHeader {
 
 case class Tx(
     counter: Int,
-    asset: ByteVector32,
+    asset: Int,
     from: Crypto.XOnlyPublicKey,
     to: Crypto.XOnlyPublicKey,
     signature: ByteVector64 = ByteVector64.Zeroes
@@ -42,7 +42,10 @@ case class Tx(
   def hash: ByteVector32 =
     Crypto.sha256(Tx.codec.encode(this).toOption.get.toByteVector)
 
-  def messageToSign: ByteVector = Tx.codec
+  // to mind a new asset, make blank transaction
+  def isNewAsset = counter == 0 && asset == 0
+
+  private def messageToSign: ByteVector = Tx.codec
     .encode(copy(signature = ByteVector64.Zeroes))
     .toOption
     .get
@@ -71,7 +74,7 @@ case class Tx(
 object Tx {
   val codec: Codec[Tx] =
     (("counter" | uint16) ::
-      ("asset" | bytes32) ::
+      ("asset" | int32) ::
       ("from" | xonlypublickey) ::
       ("to" | xonlypublickey) ::
       ("signature" | bytes64)).as[Tx]

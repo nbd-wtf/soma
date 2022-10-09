@@ -89,16 +89,14 @@ object BmmTx {
   }
 }
 
-case class AssetInfo(asset: ByteVector32, counter: Int)
+case class AssetInfo(asset: Int, counter: Int)
 
 object AssetInfo {
   given Decoder[AssetInfo] = new Decoder[AssetInfo] {
     final def apply(c: HCursor): Decoder.Result[AssetInfo] =
       for {
-        assetHex <- c.downField("asset").as[String]
+        asset <- c.downField("asset").as[Int]
         counter <- c.downField("counter").as[Int]
-      } yield {
-        AssetInfo(ByteVector32(ByteVector.fromValidHex(assetHex)), counter)
-      }
+      } yield AssetInfo(asset, counter)
   }
 }
