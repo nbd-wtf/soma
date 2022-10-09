@@ -324,20 +324,15 @@ object Database {
     db.prepare(
       "INSERT INTO current (k, blockheight, bmmhash) VALUES ('processed', 1, ?) ON CONFLICT (k) DO UPDATE SET blockheight = blockheight + ?, bmmhash = ?"
     )
-  private lazy val getNextUnusedAssetIdStmt =
-    db.prepare("SELECT max(asset) + 1 AS n FROM state")
   private lazy val mintAssetStmt =
     db.prepare("INSERT INTO state (owner, asset, counter) VALUES (?, ?, 1)")
   private lazy val updateAssetOwnershipStmt =
     db.prepare("UPDATE state SET owner = ?, counter = ? WHERE asset = ?")
-  def processBlock(block: Block): Unit = {
+  def processBlock(height: Int, block: Block): Unit = {
     db.exec("BEGIN TRANSACTION")
 
     var nextAssetToMint =
-      getNextUnusedAssetIdStmt
-        .get()
-        .map(_.selectDynamic("n").asInstanceOf[Double].toInt)
-        .getOrElse(1)
+      height * Block.MaxMintsPerBlock
 
     println(s"processing block ${block.hash}")
     updateCurrentTipStmt.run(block.hash, 1, block.hash)

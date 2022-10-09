@@ -20,7 +20,7 @@ object StateManager {
         println(s"processing block at $height")
 
         // process this
-        Database.processBlock(block)
+        Database.processBlock(height, block)
 
         // ask for the next
         processBlocksFrom(height + 1, block.hash)
@@ -45,7 +45,8 @@ object StateManager {
 
             // process all these in order
             blocks
-              .foreach { Database.processBlock(_) }
+              .zip(List.range(height + 1, highestHeight + 1))
+              .foreach((block, height) => Database.processBlock(height, block))
 
             // now proceed from there
             processBlocksFrom(highestHeight + 1, blocks.last.hash)

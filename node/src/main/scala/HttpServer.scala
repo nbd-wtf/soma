@@ -165,7 +165,11 @@ object HttpServer {
                   .getOrElse(Set.empty)
                 ujson.Obj(
                   "hash" -> tx.hash.toHex,
-                  "ok" -> Blockchain.validateTx(tx, others)
+                  "ok" -> (
+                    Blockchain.validateTx(tx, others) && (others + tx)
+                      .filter(_.isNewAsset)
+                      .size <= Block.MaxMintsPerBlock
+                  )
                 )
               }
 

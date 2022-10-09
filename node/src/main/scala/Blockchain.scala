@@ -30,7 +30,8 @@ object Blockchain {
     }
 
   def validateBlock(block: Block): Boolean =
-    validateTxs(block.txs.toSet) &&
+    block.txs.filter(_.isNewAsset).size <= Block.MaxMintsPerBlock &&
+      validateTxs(block.txs.toSet) &&
       block.header.merkleRoot == Tx.merkleRoot(block.txs)
 
   def validateTxs(txs: Set[Tx]): Boolean =

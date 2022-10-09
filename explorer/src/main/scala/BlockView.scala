@@ -96,14 +96,14 @@ object BlockView {
             ),
             div(
               b(cls := "text-lg mt-2", "transactions"),
-              block.txs.map(renderTransaction(_))
+              block.txs.zipWithIndex.map((tx, i) => renderTransaction(tx, i))
             )
           )
         case _ => div()
       }
     )
 
-  def renderTransaction(tx: Tx): HtmlElement = {
+  def renderTransaction(tx: Tx, index: Int): HtmlElement = {
     def attr(name: String, value: String, color: String) =
       div(
         cls := "w-full mx-2",

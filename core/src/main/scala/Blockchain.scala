@@ -12,6 +12,8 @@ case class Block(header: BlockHeader, txs: List[Tx]) {
 }
 
 object Block {
+  val MaxMintsPerBlock = 500
+
   val codec: Codec[Block] =
     (("header" | BlockHeader.codec) ::
       ("txs" | list(Tx.codec))).as[Block]
