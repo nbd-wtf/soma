@@ -319,20 +319,20 @@ object Database {
   def processBlock(height: Int, block: Block): Unit = {
     db.exec("BEGIN TRANSACTION")
 
-    println(s"processing block ${block.hash}")
+    println(
+      s"processing block ${block.hash} with ${block.txs.size} transaction${if block.txs.size == 1 then "" else "s"}"
+    )
     updateCurrentTipStmt.run(block.hash, 1, block.hash)
 
-    block.txs
-      .zip(
-        List.range[Int](height * Block.MaxMintsPerBlock, block.txs.size)
-      )
-      .map { case (tx: Tx, index: Int) =>
+    block.txs.zipWithIndex
+      .foreach { case (tx: Tx, index: Int) =>
         if (tx.isNewAsset) {
+          val asset = height * Block.MaxMintsPerBlock + index
           println(
             s"  ~ tx ${tx.hash.toHex
-                .take(5)}: ${index.toHexString} minted to ${tx.to.toHex.take(5)}"
+                .take(5)}: ${asset} minted to ${tx.to.toHex.take(5)}"
           )
-          mintAssetStmt.run(tx.to, index)
+          mintAssetStmt.run(tx.to, asset)
         } else {
           println(
             s"  ~ tx ${tx.hash.toHex.take(5)}: ${tx.asset.toHexString} from ${tx.from.toHex

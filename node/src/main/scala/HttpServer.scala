@@ -165,6 +165,7 @@ object HttpServer {
                     )
                   )
                   .getOrElse(Set.empty)
+
                 ujson.Obj(
                   "hash" -> tx.hash.toHex,
                   "ok" -> (
