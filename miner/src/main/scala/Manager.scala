@@ -305,6 +305,20 @@ object Manager {
                     .item(err)
                     .msg("failed to publish bmm hash, but will try again later")
 
+                case Failure(err) if err.toString().contains("is invalid") =>
+                  logger.debug
+                    .item(err)
+                    .msg(
+                      "we tried to make a block containing an invalid transaction, discard all so we can start anew"
+                    )
+
+                  pendingTransactions.keySet.foreach { txid =>
+                    pendingHtlcs.get(txid).foreach(_.success(false))
+                    pendingHtlcs.remove(txid)
+                  }
+                  pendingTransactions.clear()
+                  Datastore.storePendingTransactions()
+
                 case Failure(err) =>
                   logger.warn
                     .item(err)

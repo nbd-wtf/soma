@@ -119,7 +119,7 @@ object BlockView {
     div(
       cls := "my-2 py-3 px-1 border-2",
       div(
-        "flex w-full justify-center uppercase text-amber-800",
+        cls := "flex w-full justify-center uppercase text-amber-800",
         if tx.isNewAsset then "mint" else "transfer"
       ),
       div(

@@ -348,23 +348,24 @@ object Database {
   def rewindBlock(block: Block): Unit = {
     db.exec("BEGIN TRANSACTION")
 
-    println(s"rewinding block ${block.hash}")
-    updateCurrentTipStmt.run(block.header.previous, -1, block.header.previous)
+    // TODO
+    // println(s"rewinding block ${block.hash}")
+    // updateCurrentTipStmt.run(block.header.previous, -1, block.header.previous)
 
-    block.txs.foreach { tx =>
-      println(
-        s"  ~ tx ${tx.hash.toHex.take(5)}: ${tx.asset} from ${tx.from.toHex
-            .take(5)} to ${tx.to.toHex.take(5)}"
-      )
-      updateAssetOwnershipStmt.run(
-        tx.from,
-        tx.asset,
-        tx.from,
-        tx.counter,
-        tx.asset,
-        tx.counter + 1
-      )
-    }
+    // block.txs.foreach { tx =>
+    //   println(
+    //     s"  ~ tx ${tx.hash.toHex.take(5)}: ${tx.asset} from ${tx.from.toHex
+    //         .take(5)} to ${tx.to.toHex.take(5)}"
+    //   )
+    //   updateAssetOwnershipStmt.run(
+    //     tx.from,
+    //     tx.asset,
+    //     tx.from,
+    //     tx.counter,
+    //     tx.asset,
+    //     tx.counter + 1
+    //   )
+    // }
 
     db.exec("COMMIT")
   }
