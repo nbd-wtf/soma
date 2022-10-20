@@ -47,7 +47,7 @@ object Wallet {
               b("generated tx:"),
               div(
                 cls := "p-2 whitespace-pre-wrap break-all",
-                code(tx)
+                code(tx.encoded.toHex)
               )
             )
           case None => div()
@@ -67,7 +67,7 @@ object Wallet {
                       sk <- Keys.privkey.value.get
                     } yield {
                       val tx = mintAsset(pk)
-                      Main.txToMine.set(Some(Tx.codec.encode(tx).require.toHex))
+                      Main.txToMine.set(Some(tx))
                     }
                   }
                 },
@@ -122,7 +122,7 @@ object Wallet {
             counter,
             sk.get
           )
-          Main.txToMine.set(Some(Tx.codec.encode(tx).require.toHex))
+          Main.txToMine.set(Some(tx))
         }
       },
       label(

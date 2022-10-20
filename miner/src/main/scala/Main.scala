@@ -32,9 +32,6 @@ object Main {
     )
     .map(_ => ())
 
-  // { invoice_hash -> waitinvoice_promise }
-  val invoiceWaiters = Helpers.PromisePool[InvoiceStatus]
-
   def main(args: Array[String]): Unit = {
     Poll(0).startRead { v =>
       var current = Array.empty[Byte]
@@ -146,11 +143,6 @@ object Main {
                 "name" -> "openchain-invoice",
                 "usage" -> "tx msatoshi",
                 "description" -> "takes the transaction you want to publish plus how much in fees you intend to contribute -- this is supposed to be called by the public through commando"
-              ),
-              ujson.Obj(
-                "name" -> "openchain-waitinvoice",
-                "usage" -> "payment_hash",
-                "description" -> "returns when a payment is seen for the given invoice, but not necessarily settled"
               )
             ),
             "options" -> ujson.Arr(
@@ -200,27 +192,31 @@ object Main {
                 .item("hash", hash.take(6))
                 .msg("fulfilling lightning payment")
 
-              invoiceWaiters.resolve(hash, "resolved", isFinal = true)
               reply(ujson.Obj("result" -> "continue"))
             case Success(false) =>
               logger.debug
                 .item("hash", hash.take(6))
                 .msg("we couldn't include the transaction")
 
-              invoiceWaiters.resolve(hash, "givenup", isFinal = true)
               reply(ujson.Obj("result" -> "fail"))
             case Failure(err) =>
               logger.err.item(err).msg("rejecting payment because of a failure")
-              invoiceWaiters.resolve(hash, "failed", isFinal = true)
               reply(ujson.Obj("result" -> "fail"))
           }
         }
       case "openchain-status" =>
         reply(
           ujson.Obj(
-            "pending_txs" -> Manager.pendingTransactions.keySet,
-            "acc_fees" -> Manager.totalFees.toLong.toInt,
+            "pending_txs" -> Manager.pendingTransactions.mapValues {
+              case (tx, sat, _) => ujson.Arr(tx.toHex, sat.toLong.toInt)
+            },
             "last_published_txid" -> Publish.lastBitcoinTx
+              .map[ujson.Value](identity)
+              .getOrElse(ujson.Null),
+            "last_published_block" -> Publish.lastPublishedBlock
+              .map[ujson.Value](identity)
+              .getOrElse(ujson.Null),
+            "last_registered_block" -> Publish.lastRegisteredBlock
               .map[ujson.Value](identity)
               .getOrElse(ujson.Null)
           )
@@ -253,22 +249,6 @@ object Main {
             replyError(400, "wrong params")
           case err: Throwable =>
             replyError(500, s"something went wrong: $err")
-        }
-      case "openchain-waitinvoice" =>
-        try {
-          val hash = (params match {
-            case o: Obj => o("payment_hash").str
-            case a: Arr => a(0).str
-          })
-
-          invoiceWaiters.add(hash).map { status =>
-            reply(ujson.Obj("status" -> status))
-          }
-
-        } catch {
-          case err: java.util.NoSuchElementException =>
-            replyError(400, "wrong params")
-          case err: Throwable => replyError(500, s"something went wrong: $err")
         }
     }
   }

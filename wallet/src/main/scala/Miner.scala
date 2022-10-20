@@ -1,4 +1,4 @@
-import scala.util.{Success, Failure}
+import scala.util.{Success, Failure, Try}
 import scala.util.chaining._
 import scala.concurrent.duration.{span => _, _}
 import scala.concurrent.Future
@@ -10,6 +10,9 @@ import io.circe._
 import io.circe.syntax._
 import io.circe.parser._
 import io.circe.generic.auto._
+import scodec.bits.{ByteVector, BitVector}
+import scoin.{Satoshi, NumericSatoshi, ByteVector32}
+import openchain._
 
 case class Miner(pubkey: String, host: String, rune: String) {
   val commando = new Commando(pubkey, host, rune)
@@ -18,56 +21,25 @@ case class Miner(pubkey: String, host: String, rune: String) {
   val status: Signal[MinerStatus] = EventStream
     .merge(
       refetchStatusBus.events,
-      EventStream.periodic(20000).map(_ => ())
+      EventStream.periodic(5000).map(_ => ())
     )
     .flatMap(_ => EventStream.fromFuture(commando.rpc("openchain-status")))
     .map(_.as[MinerStatus].toTry.getOrElse(MinerStatus.empty))
     .toSignal(MinerStatus.empty)
 
-  val activeInvoice: Var[Option[MinerInvoice]] = Var(None)
-  val nextTx: Var[Option[String]] = Var(None)
+  val nextTx: Var[Option[Tx]] = Var(None)
   val nextFee: Var[Int] = Var(0)
-
-  val invoiceStatusesRestartBus = new EventBus[Unit]
-  val invoiceStatusesResultBus = new EventBus[Unit]
-  val invoiceStatus: Signal[String] = EventStream
-    .merge(
-      EventStream
-        .combine(
-          activeInvoice.signal.changes,
-          EventStream
-            .merge(EventStream.fromValue(()), invoiceStatusesResultBus.events)
-        )
-        .collect { case (Some(mi), _) => mi.hash }
-        .flatMap { hash =>
-          EventStream.fromFuture(
-            commando
-              .rpc("openchain-waitinvoice", Map("payment_hash" -> hash.asJson))
-              .map(
-                _.hcursor
-                  .downField("status")
-                  .as[String]
-                  .toTry
-                  .getOrElse("holding")
-              )
-          )
-        },
-      invoiceStatusesRestartBus.events.map(_ => "waitingpayment")
-    )
-    .map(_.tap(println(_)))
-    .toSignal("waitingpayment")
+  val activeInvoice: Var[Option[(ByteVector32, MinerInvoice)]] = Var(None)
+  val invoicePaid =
+    activeInvoice.signal.changes
+      .flatMap {
+        case Some(txid, _) => status.changes.map(_.isTxPaid(txid))
+        case None          => EventStream.fromValue(false)
+      }
+      .toSignal(false)
 
   def render(): HtmlElement =
     div(
-      // only restart the invoice awaiter when "holding"
-      invoiceStatus.changes
-        .collect { case "holding" => () } --> invoiceStatusesResultBus.writer,
-      // when a tx changes status refetch miner global settings
-      invoiceStatus.changes.map(_ => ()) --> refetchStatusBus.writer,
-      // when a tx goes resolved, refetch status and assets
-      invoiceStatus.changes.collect { case "resolved" => () }
-        --> Main.refetchInfoBus.writer,
-
       // ~
       cls := "mr-3 my-3 bg-sky-600 text-white rounded-md shadow-lg w-auto max-w-xs relative",
       minWidth := "15rem",
@@ -114,8 +86,6 @@ case class Miner(pubkey: String, host: String, rune: String) {
       // effects:
       // when a transaction is generated, force the miner value to it,
       Main.concreteTxToMine.map(Some(_)) --> nextTx,
-      //   erase whatever invoice status we had before
-      Main.concreteTxToMine.map(_ => ()) --> invoiceStatusesRestartBus,
       //   and hide whatever invoice we had before
       Main.concreteTxToMine --> activeInvoice.writer.contramap(_ => None),
 
@@ -124,17 +94,17 @@ case class Miner(pubkey: String, host: String, rune: String) {
       div(
         cls := "mb-3",
         div(
-          b("pending txs: "),
+          b("Pending Txs: "),
           child <-- status.map(_.pendingTxs.size)
         ),
         div(
-          b("accumulated fees: "),
-          child <-- status.map(_.accFees)
+          b("Accumulated Fees: "),
+          child <-- status.map(_.accFees.toString)
         ),
         div(
-          b("last bitcoin tx: "),
+          b("Last Bitcoin Tx Published: "),
           child <-- status.map(
-            _.last_published_txid
+            _.lastPublishedTxid
               .map(txid =>
                 a(
                   href := s"${Main.txExplorerUrl}$txid",
@@ -147,36 +117,78 @@ case class Miner(pubkey: String, host: String, rune: String) {
           )
         )
       ),
-      child <-- activeInvoice.signal.map {
-        case Some(inv) =>
-          div(
-            child <-- invoiceStatus.map(status =>
-              div(
-                b("status: "),
-                div(cls := "inline", fontFamily := "monospace", status)
+      child <-- Signal
+        .combine(activeInvoice.signal, invoicePaid)
+        .map {
+          case (Some(txid, inv), false) => renderInvoice(txid, inv)
+          case _                        => renderForm()
+        },
+      div(
+        h2(cls := "text-lg my-1", "Last Transactions:"),
+        div(
+          children <-- Signal
+            .combine(activeInvoice.signal, invoicePaid)
+            .map {
+              case (Some(txid, _), false) =>
+                Some(renderInflight(txid, Status.Unpaid))
+              case _ => None
+            }
+            .map(_.toList),
+          children <-- status.map(st =>
+            st.pendingTxs.values
+              .filterNot((tx, _) =>
+                st.lastPublishedBlock.map(_.txs.contains(tx)).getOrElse(false)
               )
-            ),
-            div(
-              cls := "relative",
-              child <-- invoiceStatus.map {
-                case "waitingpayment" =>
-                  renderInvoice(inv)
-                case "holding" =>
-                  div(cls := "block h-64 w-1/2 bg-yellow-300")
-                case "failed" | "unexpected" | "givenup" =>
-                  div(cls := "block h-64 w-full bg-red-300")
-                case "resolved" =>
-                  div(cls := "block h-64 w-full bg-green-300")
-              }
-            )
+              .filterNot((tx, _) =>
+                st.lastRegisteredBlock.map(_.txs.contains(tx)).getOrElse(false)
+              )
+              .map((tx, sats) => renderInflight(tx.hash, Status.Pending))
+              .toList
+          ),
+          children <-- status.map(st =>
+            st.lastPublishedBlock.toList
+              .flatMap(
+                _.txs
+                  .filterNot(tx =>
+                    st.lastRegisteredBlock
+                      .map(_.txs.contains(tx))
+                      .getOrElse(false)
+                  )
+                  .map(tx => renderInflight(tx.hash, Status.Unconfirmed))
+              )
+          ),
+          children <-- status.map(
+            _.lastRegisteredBlock.toList
+              .flatMap(
+                _.txs.map(tx => renderInflight(tx.hash, Status.Confirmed))
+              )
           )
-        case None =>
-          renderForm()
-      }
+        )
+      )
     )
 
-  def renderInvoice(inv: MinerInvoice): HtmlElement =
+  enum Status(val classes: String):
+    case Unpaid extends Status("bg-amber-100 w-1/6")
+    case Pending extends Status("bg-yellow-300 w-1/4")
+    case Unconfirmed extends Status("bg-cyan-400 w-3/4")
+    case Confirmed extends Status("bg-emerald-600 w-full")
+
+  def renderInflight(txid: ByteVector32, status: Status): HtmlElement =
     div(
+      cls := "w-full rounded mb-1",
+      div(cls := status.classes, cls := "h-3"),
+      div(
+        cls := "text-ellipsis overflow-hidden -mt-1",
+        txid.toHex
+      )
+    )
+
+  def renderInvoice(txid: ByteVector32, inv: MinerInvoice): HtmlElement =
+    div(
+      h2(
+        cls := "text-lg my-1 break-normal text-ellipsis overflow-hidden",
+        s"Invoice for ${txid}"
+      ),
       div(
         cls := "flex justify-center my-2",
         onMountCallback { ctx =>
@@ -203,27 +215,32 @@ case class Miner(pubkey: String, host: String, rune: String) {
           .rpc(
             "openchain-invoice",
             Map(
-              "tx" -> nextTx.now().get.asJson,
+              "tx" -> nextTx.now().get.encoded.toHex.asJson,
               "msatoshi" -> nextFee.now().asJson
             )
           )
           .map(_.as[MinerInvoice].toTry.get)
           .onComplete {
             case Success(inv) =>
-              activeInvoice.set(Some(inv))
+              activeInvoice.set(Some((nextTx.now().get.hash, inv)))
               nextTx.set(None)
             case Failure(err) =>
               println(s"error getting invoice from miner: $err")
           }
       },
+      h2(cls := "text-lg my-1", "Publish Arbitrary Transaction:"),
       label(
         cls := "block mb-1",
-        "tx: ",
+        "tx hex: ",
         textArea(
           cls := "block text-black px-1 h-32 w-full",
           controlled(
-            value <-- nextTx.signal.map(_.getOrElse("")),
-            onInput.mapToValue.map(Some(_)) --> nextTx.writer
+            value <-- nextTx.signal.map(_.map(_.encoded.toHex).getOrElse("")),
+            onInput.mapToValue
+              .map(ByteVector.fromHex(_))
+              .map(_.map(_.toBitVector))
+              .collect { case Some(v) => v }
+              .map(Tx.codec.decodeValue(_).toOption) --> nextTx.writer
           )
         )
       ),
@@ -331,25 +348,78 @@ object Miner {
 }
 
 case class MinerStatus(
-    pendingTxs: List[String],
-    accFees: Int,
-    last_published_txid: Option[String]
+    isConnected: Boolean,
+    pendingTxs: Map[String, (Tx, Satoshi)],
+    lastPublishedTxid: Option[String],
+    lastPublishedBlock: Option[Block],
+    lastRegisteredBlock: Option[Block]
 ) {
-  def isConnected = accFees >= 0
+  def accFees = pendingTxs.values.map(_._2).sum
+
+  def isTxPaid(txid: ByteVector32): Boolean =
+    pendingTxs.contains(txid.toHex) || lastPublishedBlock
+      .map(_.txs.exists(_.hash == txid))
+      .getOrElse(false) || lastRegisteredBlock
+      .map(_.txs.exists(_.hash == txid))
+      .getOrElse(false)
 }
 
 object MinerStatus {
   given Decoder[MinerStatus] = new Decoder[MinerStatus] {
-    final def apply(c: HCursor): Decoder.Result[MinerStatus] =
-      for {
-        pendingTxs <- c.downField("pending_txs").as[List[String]]
-        accFees <- c.downField("acc_fees").as[Int]
-        last = c.downField("last_published_txid")
-        lastTx = last.as[String].map(Some(_)).getOrElse(None)
-      } yield MinerStatus(pendingTxs, accFees, lastTx)
+    final def apply(c: HCursor): Decoder.Result[MinerStatus] = Try(
+      MinerStatus(
+        true,
+        c
+          .downField("pending_txs")
+          .as[Map[String, Json]]
+          .toTry
+          .get
+          .view
+          .mapValues { txsats =>
+            val tc = txsats.hcursor
+            val txHex = tc.downN(0).as[String].toTry.get
+            val sats = tc.downN(1).as[Long].toTry.get
+            (
+              Tx.codec.decode(BitVector.fromValidHex(txHex)).require.value,
+              Satoshi(sats)
+            )
+          }
+          .toMap,
+        c
+          .downField("last_published_txid")
+          .as[String]
+          .map(Some(_))
+          .getOrElse(None),
+        c
+          .downField("last_published_block")
+          .as[String]
+          .map(Some(_))
+          .getOrElse(None)
+          .map(ByteVector.fromValidHex(_).toBitVector)
+          .flatMap(Block.codec.decode(_).toOption)
+          .map(_.value),
+        c
+          .downField("last_registered_block")
+          .as[String]
+          .map(Some(_))
+          .getOrElse(None)
+          .map(ByteVector.fromValidHex(_).toBitVector)
+          .flatMap(Block.codec.decode(_).toOption)
+          .map(_.value)
+      )
+    ) match {
+      case Success(v) => Right(v)
+      case Failure(err) =>
+        Left(
+          DecodingFailure(
+            DecodingFailure.Reason.CustomReason(s"invalid data: $err"),
+            c
+          )
+        )
+    }
   }
 
-  def empty = MinerStatus(List.empty, -1, None)
+  def empty = MinerStatus(false, Map.empty, None, None, None)
 }
 
 case class MinerInvoice(

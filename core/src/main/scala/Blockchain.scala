@@ -9,6 +9,7 @@ import scoin.CommonCodecs.{bytes32, bytes64, xonlypublickey}
 
 case class Block(height: Long, header: BlockHeader, txs: List[Tx]) {
   def hash: ByteVector32 = header.hash
+  def encoded: ByteVector = Block.codec.encode(this).require.toByteVector
 }
 
 object Block {
@@ -44,6 +45,7 @@ case class Tx(
 ) {
   def hash: ByteVector32 =
     Crypto.sha256(Tx.codec.encode(this).toOption.get.toByteVector)
+  def encoded: ByteVector = Tx.codec.encode(this).require.toByteVector
 
   // to mind a new asset, make blank transaction
   def isNewAsset = counter == 0 && asset == 0

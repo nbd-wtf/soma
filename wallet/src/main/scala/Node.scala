@@ -1,4 +1,5 @@
 import scala.util.{Try, Success}
+import scala.util.chaining._
 import scala.concurrent.Future
 import scala.scalajs.js
 import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
@@ -13,9 +14,15 @@ import scodec.bits.ByteVector
 import scoin._
 import scoin.Crypto.{XOnlyPublicKey, PrivateKey}
 
+import JSON.given
+
 object Node {
   def getInfo(): Future[NodeInfo] =
     call("info").map(_.as[NodeInfo].toTry.get)
+
+  def getBlock(hash: String): Future[Block] =
+    call("getblock", Map("hash" -> hash.asJson))
+      .map(_.as[Block].toTry.get)
 
   def getAssets(key: XOnlyPublicKey): Future[List[AssetInfo]] =
     call("getaccountassets", Map("pubkey" -> key.value.toHex.asJson))
@@ -41,11 +48,19 @@ object Node {
       .map(_.hcursor.downField("result").as[Json].toTry.get)
 
   def nodeUrl = Try(
-    Uri.parse(dom.window.localStorage.getItem("nodeUrl"))
+    Uri.parse(
+      dom.window.localStorage
+        .getItem("nodeUrl")
+        .pipe(s => if s.startsWith("http") then s else s"http://$s")
+    )
   ) match {
     case Success(Right(s)) => s
     case _ =>
-      Uri.unsafeParse(js.Dynamic.global.NODE_URL.asInstanceOf[String])
+      Uri.unsafeParse(
+        js.Dynamic.global.NODE_URL
+          .asInstanceOf[String]
+          .pipe(s => if s.startsWith("http") then s else s"http://$s")
+      )
   }
 }
 
@@ -98,5 +113,32 @@ object AssetInfo {
         asset <- c.downField("asset").as[Int]
         counter <- c.downField("counter").as[Int]
       } yield AssetInfo(asset, counter)
+  }
+}
+
+object JSON {
+  given Decoder[XOnlyPublicKey] = new Decoder[XOnlyPublicKey] {
+    final def apply(c: HCursor): Decoder.Result[XOnlyPublicKey] =
+      c.as[ByteVector32].map(XOnlyPublicKey(_))
+  }
+
+  given Decoder[ByteVector32] = new Decoder[ByteVector32] {
+    final def apply(c: HCursor): Decoder.Result[ByteVector32] =
+      c.as[ByteVector].map(ByteVector32(_))
+  }
+
+  given Decoder[ByteVector64] = new Decoder[ByteVector64] {
+    final def apply(c: HCursor): Decoder.Result[ByteVector64] =
+      c.as[ByteVector].map(ByteVector64(_))
+  }
+
+  given Decoder[ByteVector] = new Decoder[ByteVector] {
+    final def apply(c: HCursor): Decoder.Result[ByteVector] =
+      c.as[String]
+        .flatMap(
+          ByteVector
+            .fromHex(_)
+            .toRight(DecodingFailure("invalid hex", c.history))
+        )
   }
 }

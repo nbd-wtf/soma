@@ -62,7 +62,12 @@ object Manager {
                 val register = for {
                   // register the corresponding block at the node
                   res <- Node.registerBlock(block)
-                  _ = logger.debug.item("ok", res("ok").bool).msg("registered")
+
+                  _ = {
+                    logger.debug.item("ok", res("ok").bool).msg("registered")
+                    if (res("ok").bool)
+                      Publish.lastRegisteredBlock = Some(block.toHex)
+                  }
 
                   //   check which of our pending transactions were
                   //   included and settle the corresponding lightning invoices
@@ -98,6 +103,7 @@ object Manager {
                         true // keep it in the list of pending
                       }
                     }
+                    Datastore.storePendingTransactions()
                 }
 
                 register.onComplete {
@@ -227,9 +233,6 @@ object Manager {
           promise.success(false)
 
         case Success(invoice) =>
-          // notify any listeners we might have
-          Main.invoiceWaiters.resolve(invoice("payment_hash").str, "holding")
-
           val fee = MilliSatoshi(invoice("msatoshi").num.toLong)
 
           // parse the txid from the invoice description and get the full tx from our cache
@@ -348,7 +351,11 @@ object Manager {
     )
 
     // republish block bmm tx
-    bmmTxid <- Publish.publishBmmHash(bmmhash, block, totalFees)
+    bmmTxid <- Publish.publishBmmHash(
+      bmmhash,
+      block,
+      pendingTransactions.values.map((_, fees, _) => fees).sum
+    )
 
     _ = logger.debug.item("bmm-txid", bmmTxid).msg("published bmm hash")
   } yield ()
@@ -379,7 +386,4 @@ object Manager {
       idToFullTx += (txid -> tx)
       (bolt11, hash)
     }
-
-  def totalFees: Satoshi =
-    pendingTransactions.values.map((_, fees, _) => fees).sum
 }

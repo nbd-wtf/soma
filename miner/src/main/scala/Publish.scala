@@ -21,8 +21,10 @@ object Publish {
   var pendingPublishedBlocks: (String, Map[ByteVector32, ByteVector]) =
     ("", Map.empty)
 
-  // this is just informative and not used or relied upon
+  // these are just informative and not used or relied upon
   var lastBitcoinTx: Option[String] = None
+  var lastPublishedBlock: Option[String] = None
+  var lastRegisteredBlock: Option[String] = None
 
   def publishBmmHash(
       blockHash: ByteVector32,
@@ -147,6 +149,7 @@ object Publish {
     } yield {
       val txid = res("txid").str
       lastBitcoinTx = Some(txid)
+      lastPublishedBlock = Some(block.toHex)
       logger.info
         .item("bmm-hash", blockHash.toHex)
         .item("bitcoin-txid", txid)
