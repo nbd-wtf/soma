@@ -5,6 +5,7 @@ import scala.concurrent.Future
 import scala.scalajs.js
 import org.scalajs.dom
 import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
+import sttp.model.Uri
 import com.raquo.laminar.api.L._
 import io.circe._
 import io.circe.syntax._
@@ -274,6 +275,29 @@ object Miner {
       .toFuture
       .map(parse(_).toTry.get)
       .map(_.as[List[Miner]].toTry.getOrElse(List.empty))
+      .map { miners =>
+        if (miners.size > 0) miners
+        else
+          Uri
+            .parse(
+              js.Dynamic.global.DEFAULT_MINER
+                .asInstanceOf[String]
+                .pipe(s => s"tcp://$s")
+            )
+            .toOption
+            .flatMap(uri =>
+              Try(
+                List(
+                  Miner(
+                    uri.userInfo.get.username,
+                    s"${uri.host.get}:${uri.port.get}",
+                    uri.userInfo.get.password.get
+                  )
+                )
+              ).toOption
+            )
+            .getOrElse(List.empty)
+      }
 
   def storeMiners(miners: List[Miner]): Unit =
     js.Dynamic.global.storeMiners(miners.asJson.toString)

@@ -3,10 +3,10 @@
 This must be compiled first with
 
 ```
-sbt 'explorer/fullLinkJS/esBuild' -DdefaultNodeUrl='http://127.0.0.1:9036' -DdefaultTxExplorerUrl='https://mempool.space/tx/'
+sbt 'explorer/fullLinkJS/esBuild' -DdefaultNodeUrl='http://127.0.0.1:9036' -DdefaultTxExplorerUrl='https://mempool.space/tx/' -DdefaultMiner='nodePubkey:commandoRune@ipaddress:port'
 ```
 
-(Replace parameters above with the correct values for your setup, above are the defaults.)
+(Replace parameters above with the correct values for your setup, above are the defaults, except for default miner for which there is no default.)
 
 (You can also set these values manually at `localStorage` once the app is running at `nodeUrl` and `txExplorerUrl` keys.)
 

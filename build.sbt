@@ -9,6 +9,7 @@ ThisBuild / tlSonatypeUseLegacyHost := false
 
 Global / onChangedBuildSource := ReloadOnSourceChanges
 
+val defaultMiner = sys.props.getOrElse("defaultMiner", default = "")
 val defaultNodeUrl = sys.props.getOrElse("defaultNodeUrl", default = "127.0.0.1:9036")
 val defaultTxExplorerUrl = sys.props.getOrElse("defaultTxExplorerUrl", default = "https://mempool.space/tx/")
 
@@ -74,7 +75,8 @@ lazy val wallet = project
     esbuildOptions ++= Seq(
       "--target=es2020",
       s"""--define:NODE_URL="${defaultNodeUrl}"""",
-      s"""--define:TX_EXPLORER_URL="${defaultTxExplorerUrl}""""
+      s"""--define:TX_EXPLORER_URL="${defaultTxExplorerUrl}"""",
+      s"""--define:DEFAULT_MINER="${defaultMiner}""""
     ),
     esPackageManager := Yarn,
     scalaJSLinkerConfig ~= { _.withModuleKind(ModuleKind.CommonJSModule) },
