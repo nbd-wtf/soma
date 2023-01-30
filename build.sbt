@@ -33,7 +33,21 @@ lazy val miner = project
       "com.fiatjaf" %%% "sn-unixsocket" % "0.2.0",
       "com.github.lolgab" %%% "httpclient" % "0.0.1",
       "com.github.lolgab" %%% "native-loop-core" % "0.2.1",
-    )
+    ),
+    nativeConfig := {
+      val conf = nativeConfig.value
+
+      if (sys.env.get("SN_LINK").contains("static"))
+        conf
+          .withLinkingOptions(
+            conf.linkingOptions ++ Seq(
+              "-static",
+              "-lsecp256k1",
+              "-luv",
+            )
+          )
+      else conf
+    }
   )
   .dependsOn(core.native)
   .enablePlugins(ScalaNativePlugin)
