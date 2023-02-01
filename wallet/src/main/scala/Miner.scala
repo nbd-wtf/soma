@@ -13,7 +13,7 @@ import io.circe.parser._
 import io.circe.generic.auto._
 import scodec.bits.{ByteVector, BitVector}
 import scoin.{Satoshi, NumericSatoshi, ByteVector32}
-import openchain._
+import soma._
 
 case class Miner(pubkey: String, host: String, rune: String) {
   val commando = new Commando(pubkey, host, rune)
@@ -24,7 +24,7 @@ case class Miner(pubkey: String, host: String, rune: String) {
       refetchStatusBus.events,
       EventStream.periodic(5000).map(_ => ())
     )
-    .flatMap(_ => EventStream.fromFuture(commando.rpc("openchain-status")))
+    .flatMap(_ => EventStream.fromFuture(commando.rpc("soma-status")))
     .map(_.as[MinerStatus].toTry.getOrElse(MinerStatus.empty))
     .toSignal(MinerStatus.empty)
 
@@ -214,7 +214,7 @@ case class Miner(pubkey: String, host: String, rune: String) {
       onSubmit.preventDefault --> { _ =>
         commando
           .rpc(
-            "openchain-invoice",
+            "soma-invoice",
             Map(
               "tx" -> nextTx.now().get.encoded.toHex.asJson,
               "msatoshi" -> nextFee.now().asJson

@@ -12,7 +12,7 @@ import io.circe.generic.auto._
 import scodec.bits.ByteVector
 import scoin.{ByteVector32, ByteVector64}
 import scoin.Crypto.{XOnlyPublicKey}
-import openchain._
+import soma._
 
 import JSON.given
 

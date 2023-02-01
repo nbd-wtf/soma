@@ -2,7 +2,7 @@ import scala.util.{Success, Failure}
 import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
 import org.scalajs.dom
 import com.raquo.laminar.api.L._
-import openchain._
+import soma._
 
 object BlockView {
   val blocks: Signal[List[BmmTx]] = Main.info.changes

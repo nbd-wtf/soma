@@ -11,7 +11,7 @@ object Datastore {
   // ~
   // pending transactions
 
-  final val pendingTransactionsKey = List("openchain", "pending-transactions")
+  final val pendingTransactionsKey = List("soma", "pending-transactions")
   val loadingPendingTransactions: Future[Unit] =
     getJSON(pendingTransactionsKey)
       .andThen {
@@ -59,7 +59,7 @@ object Datastore {
   // ~
   // pending blocks
 
-  final val pendingBlocksKey = List("openchain", "pending-blocks")
+  final val pendingBlocksKey = List("soma", "pending-blocks")
   val loadingPendingBlocks: Future[Unit] =
     getJSON(pendingBlocksKey)
       .andThen {

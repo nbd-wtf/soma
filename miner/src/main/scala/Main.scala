@@ -135,12 +135,12 @@ object Main {
             ),
             "rpcmethods" -> ujson.Arr(
               ujson.Obj(
-                "name" -> "openchain-status",
+                "name" -> "soma-status",
                 "usage" -> "",
                 "description" -> "returns a bunch of data -- this is supposed to be called by the public through commando"
               ),
               ujson.Obj(
-                "name" -> "openchain-invoice",
+                "name" -> "soma-invoice",
                 "usage" -> "tx msatoshi",
                 "description" -> "takes the transaction you want to publish plus how much in fees you intend to contribute -- this is supposed to be called by the public through commando"
               )
@@ -150,13 +150,13 @@ object Main {
                 "name" -> "overseer-url",
                 "type" -> "string",
                 "default" -> "http://localhost:10738",
-                "description" -> "URL of the openchain overseer."
+                "description" -> "URL of the soma overseer."
               ),
               ujson.Obj(
                 "name" -> "node-url",
                 "type" -> "string",
                 "default" -> "http://127.0.0.1:9036",
-                "description" -> "URL of the openchain node."
+                "description" -> "URL of the soma node."
               )
             ),
             "subscriptions" -> ujson.Arr("block_added"),
@@ -204,7 +204,7 @@ object Main {
               reply(ujson.Obj("result" -> "fail"))
           }
         }
-      case "openchain-status" =>
+      case "soma-status" =>
         reply(
           ujson.Obj(
             "pending_txs" -> Manager.pendingTransactions.mapValues {
@@ -221,7 +221,7 @@ object Main {
               .getOrElse(ujson.Null)
           )
         )
-      case "openchain-invoice" =>
+      case "soma-invoice" =>
         try {
           val (tx, amount) = (params match {
             case o: Obj => (o("tx").str, o("msatoshi").num)

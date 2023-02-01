@@ -1,4 +1,4 @@
-package openchain
+package soma
 
 import scodec.bits.ByteVector
 import scodec.codecs._

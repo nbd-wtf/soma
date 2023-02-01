@@ -4,7 +4,7 @@ import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
 import org.scalajs.dom
 import sttp.model.Uri
 import com.raquo.laminar.api.L._
-import openchain._
+import soma._
 
 object Main {
   val info: Signal[NodeInfo] = EventStream

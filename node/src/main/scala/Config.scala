@@ -6,7 +6,7 @@ object Config {
   private val home = homedir()
   def datadir = process.env.DATADIR.toOption
     .map(_.replace("~", home))
-    .getOrElse(s"$home/.config/openchain/node/")
+    .getOrElse(s"$home/.config/soma/node/")
 
   mkdirSync(
     datadir,

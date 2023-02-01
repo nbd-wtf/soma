@@ -1,6 +1,6 @@
 ThisBuild / scalaVersion        := "3.2.0"
 ThisBuild / organization        := "com.fiatjaf"
-ThisBuild / homepage            := Some(url("https://github.com/fiatjaf/openchain"))
+ThisBuild / homepage            := Some(url("https://github.com/fiatjaf/soma"))
 ThisBuild / licenses            += License.MIT
 ThisBuild / developers          := List(tlGitHubDev("fiatjaf", "fiatjaf"))
 
@@ -16,7 +16,7 @@ val defaultTxExplorerUrl = sys.props.getOrElse("defaultTxExplorerUrl", default =
 lazy val core = crossProject(JVMPlatform, JSPlatform, NativePlatform)
   .crossType(CrossType.Pure)
   .settings(
-    name := "openchain-core",
+    name := "soma-core",
     libraryDependencies ++= Seq(
       "com.fiatjaf" %%% "scoin" % "0.4.0"
     )
@@ -25,7 +25,7 @@ lazy val core = crossProject(JVMPlatform, JSPlatform, NativePlatform)
 
 lazy val miner = project
   .settings(
-    name := "openchain-miner",
+    name := "soma-miner",
     libraryDependencies ++= Seq(
       "com.lihaoyi" %%% "upickle" % "1.6.0",
       "com.lihaoyi" %%% "ujson" % "1.6.0",
@@ -55,7 +55,7 @@ lazy val miner = project
 
 lazy val node = project
   .settings(
-    name := "openchain-node",
+    name := "soma-node",
     scalaJSUseMainModuleInitializer := true,
     libraryDependencies ++= Seq(
       "com.lihaoyi" %%% "upickle" % "1.6.0",
@@ -70,7 +70,7 @@ lazy val node = project
 
 lazy val wallet = project
   .settings(
-    name := "openchain-wallet",
+    name := "soma-wallet",
     scalaJSUseMainModuleInitializer := true,
     libraryDependencies ++= Seq(
       "io.circe" %%% "circe-core" % "0.14.3",
@@ -102,7 +102,7 @@ lazy val wallet = project
 
 lazy val explorer = project
   .settings(
-    name := "openchain-explorer",
+    name := "soma-explorer",
     scalaJSUseMainModuleInitializer := true,
     libraryDependencies ++= Seq(
       "io.circe" %%% "circe-core" % "0.14.3",

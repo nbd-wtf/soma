@@ -5,7 +5,7 @@ import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
 import scodec.bits.ByteVector
 import scodec.{Attempt, DecodeResult}
 import scoin.ByteVector32
-import openchain._
+import soma._
 
 object PeerManager {
   var peers: List[Conn] = List.empty

@@ -24,7 +24,7 @@ var html string
 var script []byte
 
 var (
-	configDir, _ = homedir.Expand("~/.config/openchain/wallet")
+	configDir, _ = homedir.Expand("~/.config/soma/wallet")
 	keysFile     = path.Join(configDir, "key")
 	_            = os.MkdirAll(configDir, 0700)
 )

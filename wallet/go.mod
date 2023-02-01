@@ -1,4 +1,4 @@
-module github.com/fiatjaf/openchain/wallet
+module github.com/fiatjaf/soma/wallet
 
 go 1.18
 

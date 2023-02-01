@@ -1,6 +1,6 @@
 import scodec.bits.ByteVector
 import scoin.{randomBytes32, ByteVector32, ByteVector64}
-import openchain._
+import soma._
 
 object Blockchain {
   def makeBlock(

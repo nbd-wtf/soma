@@ -8,7 +8,7 @@ import scala.scalajs.js.typedarray.Uint8Array
 import scodec.bits.ByteVector
 import scoin.{Crypto, ByteVector32, ByteVector64}
 import scoin.Crypto.XOnlyPublicKey
-import openchain._
+import soma._
 
 object Database {
   private var db: Database = _

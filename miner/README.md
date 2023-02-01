@@ -15,7 +15,7 @@ Then run `sbt nativeLink`.
 Start `lightningd` with this as a plugin, i.e. using the following option:
 
 ```
---plugin=/path/to/openchain/miner/target/scala-3.2.0/openchain-miner-out
+--plugin=/path/to/soma/miner/target/scala-3.2.0/soma-miner-out
 ```
 
 These two optional parameters may be set, below are the defaults:

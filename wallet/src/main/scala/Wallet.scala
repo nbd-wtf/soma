@@ -12,7 +12,7 @@ import io.circe.syntax._
 import io.circe.parser._
 import scoin._
 import scoin.Crypto.{XOnlyPublicKey, PrivateKey}
-import openchain._
+import soma._
 
 object Wallet {
   val assets = EventStream

@@ -20,10 +20,10 @@ async function loadKey () {
   return fetch("/key").then(r => r.text())
 }
 async function storeMiners(json) {
-  localStorage.setItem("openchain:miners", json)
+  localStorage.setItem("soma:miners", json)
 }
 async function loadMiners() {
-  return localStorage.getItem("openchain:miners")
+  return localStorage.getItem("soma:miners")
 }
 </script>
 <script src=/target/esbuild/bundle.js></script>

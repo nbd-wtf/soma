@@ -1,4 +1,4 @@
-package openchain
+package soma
 
 import scala.util.chaining._
 import scodec.bits.ByteVector

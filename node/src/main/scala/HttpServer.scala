@@ -10,7 +10,7 @@ import scala.scalajs.js.typedarray.Uint8Array
 import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
 import scoin.ByteVector32
 import scoin.Crypto.XOnlyPublicKey
-import openchain._
+import soma._
 
 import Picklers.given
 
