@@ -1,10 +1,10 @@
-ThisBuild / scalaVersion        := "3.2.0"
+ThisBuild / scalaVersion        := "3.2.2"
 ThisBuild / organization        := "com.fiatjaf"
 ThisBuild / homepage            := Some(url("https://github.com/fiatjaf/soma"))
 ThisBuild / licenses            += License.MIT
 ThisBuild / developers          := List(tlGitHubDev("fiatjaf", "fiatjaf"))
 
-ThisBuild / version := "0.1.0-SNAPSHOT"
+ThisBuild / version := "0.2.0-SNAPSHOT"
 ThisBuild / tlSonatypeUseLegacyHost := false
 
 Global / onChangedBuildSource := ReloadOnSourceChanges
@@ -18,8 +18,11 @@ lazy val core = crossProject(JVMPlatform, JSPlatform, NativePlatform)
   .settings(
     name := "soma-core",
     libraryDependencies ++= Seq(
-      "com.fiatjaf" %%% "scoin" % "0.4.0"
-    )
+      "com.fiatjaf" %%% "scoin" % "0.6.1-SNAPSHOT",
+
+      "com.lihaoyi" %%% "utest" % "0.8.0" % Test
+    ),
+    testFrameworks += new TestFramework("utest.runner.Framework")
   )
   .in(file("core"))
 

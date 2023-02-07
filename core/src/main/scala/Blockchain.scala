@@ -77,7 +77,7 @@ case class Tx(
   }
 
   def signatureValid(): Boolean =
-    Crypto.verifySignatureSchnorr(Crypto.sha256(messageToSign), signature, from)
+    Crypto.verifySignatureSchnorr(signature, Crypto.sha256(messageToSign), from)
 }
 
 object Tx {
