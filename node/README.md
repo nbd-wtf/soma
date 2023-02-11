@@ -19,7 +19,7 @@ Before running the dependencies must be installed with `npm install`. They are l
 Then run with
 
 ```
-BITCOIN_CHAIN=regtest BITCOIND_USER=something BITCOIND_PASSWORD=something GENESIS_TX=<taken-from-overseer-http-output> node --enable-source-maps target/scala-3.2.0/soma-node-fastopt/main.js
+BITCOIN_CHAIN=regtest BITCOIND_USER=something BITCOIND_PASSWORD=something GENESIS_TX=<known> node --enable-source-maps target/scala-3.2.0/soma-node-fastopt/main.js
 ```
 
 These params are necessary for talking to `bitcoind`.

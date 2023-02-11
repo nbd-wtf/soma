@@ -43,7 +43,9 @@ object Node {
           )
       }
 
-  def getNextBlock(txs: Seq[ByteVector]): Future[(ByteVector32, ByteVector)] =
+  def getNextBlock(
+      txs: Seq[ByteVector]
+  ): Future[(ByteVector32, ByteVector, Int)] =
     call(
       "makeblock",
       ujson.Obj(
@@ -53,7 +55,8 @@ object Node {
       .map(row =>
         (
           ByteVector32(ByteVector.fromValidHex(row("hash").str)),
-          ByteVector.fromValidHex(row("block").str)
+          ByteVector.fromValidHex(row("block").str),
+          row("bmmheight").num.toInt
         )
       )
 

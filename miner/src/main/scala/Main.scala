@@ -141,17 +141,16 @@ object Main {
               ),
               ujson.Obj(
                 "name" -> "soma-invoice",
-                "usage" -> "tx msatoshi",
+                "usage" -> "tx amount_msat",
                 "description" -> "takes the transaction you want to publish plus how much in fees you intend to contribute -- this is supposed to be called by the public through commando"
+              ),
+              ujson.Obj(
+                "name" -> "soma-startchain",
+                "usage" -> "fee_sat",
+                "description" -> "publishes a transaction that pays to the first bmm transaction"
               )
             ),
             "options" -> ujson.Arr(
-              ujson.Obj(
-                "name" -> "overseer-url",
-                "type" -> "string",
-                "default" -> "http://localhost:10738",
-                "description" -> "URL of the soma overseer."
-              ),
               ujson.Obj(
                 "name" -> "node-url",
                 "type" -> "string",
@@ -172,7 +171,6 @@ object Main {
           lightningDir + "/" + params("configuration")("rpc-file").str
         )
         Node.nodeUrl = params("options")("node-url").str
-        Publish.overseerURL = params("options")("overseer-url").str
       }
       case "block_added" =>
         operational.foreach { _ =>
@@ -224,7 +222,7 @@ object Main {
       case "soma-invoice" =>
         try {
           val (tx, amount) = (params match {
-            case o: Obj => (o("tx").str, o("msatoshi").num)
+            case o: Obj => (o("tx").str, o("amount_msat").num)
             case a: Arr => (a(0).str, a(1).num)
           }).pipe(v =>
             (
@@ -244,6 +242,28 @@ object Main {
             case Failure(err) =>
               replyError(1, err.toString)
           }
+        } catch {
+          case err: java.util.NoSuchElementException =>
+            replyError(400, "wrong params")
+          case err: Throwable =>
+            replyError(500, s"something went wrong: $err")
+        }
+      case "soma-startchain" =>
+        try {
+          val fee = (params match {
+            case o: Obj => (o("fee_sat").num)
+            case a: Arr => (a(0).num)
+          }).pipe(sat => Satoshi(sat.toLong))
+
+          Publish
+            .publishGenesisTx(fee)
+            .onComplete {
+              case Success(txid) =>
+                reply(ujson.Obj("txid" -> txid))
+              case Failure(err) =>
+                replyError(1, err.toString())
+            }
+
         } catch {
           case err: java.util.NoSuchElementException =>
             replyError(400, "wrong params")

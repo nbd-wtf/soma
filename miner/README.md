@@ -15,12 +15,11 @@ Then run `sbt nativeLink`.
 Start `lightningd` with this as a plugin, i.e. using the following option:
 
 ```
---plugin=/path/to/soma/miner/target/scala-3.2.0/soma-miner-out
+--plugin=/path/to/soma/miner/target/scala-3.2.2/soma-miner-out
 ```
 
-These two optional parameters may be set, below are the defaults:
+This optional parameter may be set. Defaults:
 
 ```
---overseer-url=http://localhost:10738
 --node-url=http://localhost:9036
 ```

@@ -346,13 +346,14 @@ object Manager {
 
   def publishBlock(): Future[Unit] = for {
     // get the block to publish containing all our pending txs from the node
-    (bmmhash, block) <- Node.getNextBlock(
+    (bmmhash, block, bmmheight) <- Node.getNextBlock(
       pendingTransactions.values.map((tx, _, _) => tx).toList
     )
 
     // republish block bmm tx
     bmmTxid <- Publish.publishBmmHash(
       bmmhash,
+      bmmheight,
       block,
       pendingTransactions.values.map((_, fees, _) => fees).sum
     )

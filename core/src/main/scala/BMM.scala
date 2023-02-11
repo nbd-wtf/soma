@@ -1,22 +1,35 @@
 package soma
 
+import java.nio.file.{Paths, Path, Files}
 import scala.collection.mutable.ArrayBuffer
 import scodec.bits.ByteVector
 import scoin._
+import scoin.Protocol._
 
 class BMM(
-    totalSize: Int = 144 * 365 * 100, // 100 years
-    sequence: Int = 1, // minimum of 1 block of relative interval
-    amount: Satoshi = 1871.sat
+    val totalSize: Int = 144 * 365 * 100, // 100 years
+    val sequence: Int = 1, // minimum of 1 block of relative interval
+    val amount: Satoshi = 1871.sat
 ) {
   val priv = Crypto.PrivateKey(1)
   val pub = priv.publicKey
+
+  var txs: Seq[Transaction] = Seq.empty
+  var startingAt: Int = _
+
+  def get(height: Int): Transaction = {
+    require(
+      height >= startingAt && txs.size > height - startingAt,
+      s"requested transaction ($height) out of range ($startingAt-${startingAt + txs.size}), must load or precompute before"
+    )
+    txs(height - startingAt)
+  }
 
   case class FloatingTransaction(
       tx: Transaction,
       sig: ByteVector64
   ) {
-    def fill(
+    def bind(
         input: Transaction,
         script: List[ScriptElt],
         controlBlock: ByteVector
@@ -38,7 +51,7 @@ class BMM(
       )
   }
 
-  def precompute(startAt: Int, count: Int): Seq[Transaction] = {
+  def precompute(startAt: Int, count: Int): Unit = {
     var currIdx = totalSize
     var currTx = lastTx
 
@@ -53,15 +66,67 @@ class BMM(
     val stored = ArrayBuffer.empty[Transaction]
     while (currIdx >= startAt) {
       val (previous, next) = regress(currTx)
-      stored.append(next)
+      stored += next
       currTx = previous
       currIdx = currIdx - 1
     }
 
-    stored.reverse.toSeq
+    txs = stored.reverse.toSeq
+    startingAt = startAt
   }
 
-  def lastTx: FloatingTransaction = {
+  val dir =
+    Paths.get(System.getProperty("user.home"), ".config", "soma", "precomputed")
+  dir.toFile().mkdirs()
+
+  // store precomputed txs on filesystem
+  def store(): Unit = {
+    val groups = {
+      // 6 weeks: the size of the precomputed batch of txs we store on a file and keep in memory
+      val GROUP_SIZE = 144 * 7 * 6
+      val firstGroupStart = startingAt % GROUP_SIZE
+      val firstGroupSize = GROUP_SIZE - firstGroupStart
+      val firstGroup = txs.take(firstGroupSize)
+      val groups =
+        firstGroup +: txs.drop(firstGroupSize).grouped(GROUP_SIZE).toSeq
+      groups.zipWithIndex.map { (tx, i) =>
+        val groupStart = i * GROUP_SIZE + startingAt / GROUP_SIZE
+        val groupEnd = groupStart + GROUP_SIZE
+        (tx, s"$groupStart-$groupEnd")
+      }
+    }
+
+    groups.foreach { (group, name) =>
+      val file = dir.resolve(name).toFile()
+      Protocol.writeCollection(
+        group,
+        new java.io.FileOutputStream(file),
+        Protocol.PROTOCOL_VERSION
+      )
+    }
+  }
+
+  // load precomputed txs from filesystem
+  def load(): Unit = {
+    // just load the first file for now
+    val sortedFilenames =
+      dir.toFile().list().sortBy(_.takeWhile(_.isDigit).toInt)
+
+    if (!sortedFilenames.isEmpty) {
+      val firstFilename = sortedFilenames(0)
+      val firstElement = firstFilename.takeWhile(_.isDigit).toInt
+      val firstGroupName = firstElement.toString()
+      val first = dir.resolve(firstGroupName).toFile()
+
+      txs = Protocol.readCollection[Transaction](
+        new java.io.FileInputStream(dir.resolve(firstFilename).toFile()),
+        Protocol.PROTOCOL_VERSION
+      )
+      startingAt = firstElement
+    }
+  }
+
+  private def lastTx: FloatingTransaction = {
     val tx = Transaction(
       version = 2,
       txIn = List(TxIn.placeholder(sequence)),
@@ -112,7 +177,7 @@ class BMM(
     )
     val merkleRoot = ScriptTree.hash(scriptTree)
 
-    val internalPubkey = Crypto.XOnlyPublicKey(pub)
+    val internalPubkey = pub.xonly
     val tweakedKey = internalPubkey.outputKey(Some(merkleRoot))
     val parity = tweakedKey.publicKey.isOdd
 
@@ -139,7 +204,7 @@ class BMM(
     )
 
     val sig = Crypto.signSchnorr(hash, priv, None)
-    val nextTx = next.fill(tx, script, controlBlock)
+    val nextTx = next.bind(tx, script, controlBlock)
 
     (FloatingTransaction(tx, sig), nextTx)
   }

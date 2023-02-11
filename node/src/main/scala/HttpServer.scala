@@ -195,7 +195,12 @@ object HttpServer {
                   case Right(block) =>
                     ujson.Obj(
                       "block" -> Block.codec.encode(block).toOption.get.toHex,
-                      "hash" -> block.hash.toHex
+                      "hash" -> block.hash.toHex,
+                      "bmmheight" ->
+                        Database
+                          .getLatestTx()
+                          .map { case (_, bmmheight, _) => bmmheight }
+                          .getOrElse(1)
                     )
                 }
               }
