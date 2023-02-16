@@ -3,7 +3,7 @@
 This must be compiled first with
 
 ```
-sbt 'explorer/fullLinkJS/esBuild' -DdefaultNodeUrl='http://127.0.0.1:9036' -DdefaultTxExplorerUrl='https://mempool.space/tx/' -DdefaultMiner='nodePubkey:commandoRune@ipaddress:port'
+sbt 'wallet/fullLinkJS/esBuild' -DdefaultNodeUrl='http://127.0.0.1:9036' -DdefaultTxExplorerUrl='https://mempool.space/tx/' -DdefaultMiner='nodePubkey:commandoRune@ipaddress:port'
 ```
 
 (Replace parameters above with the correct values for your setup, above are the defaults, except for default miner for which there is no default.)
@@ -16,4 +16,4 @@ After compiling, do a `go build` to pack everything into a single Go executable 
 
 When in development, run with `./wallet dev` and it will not use the packaged assets, but instead the assets from the filesystem directly, so you can edit them and refresh to see the results.
 
-While developing, it's sane to run `sbt '~explorer/fastLinkJS/esBuild'` to keep rebuilding once things change.
+While developing, it's sane to run `sbt '~wallet/fastLinkJS/esBuild'` to keep rebuilding once things change.

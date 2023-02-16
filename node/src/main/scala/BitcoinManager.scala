@@ -11,6 +11,7 @@ import scoin.ByteVector32
 object BitcoinManager {
   private var p = Promise[Unit]()
   private var startedP = Future.successful(())
+  private var lastBlockScanned: Option[Int] = None
 
   private def started =
     !startedP.isCompleted // if completed means we're not working
@@ -31,17 +32,23 @@ object BitcoinManager {
           "getrawtransaction",
           ujson.Arr(txid, 2)
         )
-        btcBlock <- BitcoinRPC.call(
-          "getblock",
-          ujson.Arr(tipTx("blockhash").str)
-        )
+        scanFromHeight <- lastBlockScanned
+          .map(Future(_))
+          .getOrElse(
+            BitcoinRPC
+              .call(
+                "getblock",
+                ujson.Arr(tipTx("blockhash").str)
+              )
+              .map(_("height").num.toInt + 1)
+          )
       } yield {
-        // println(s"starting scan from ${tipTx("txid").str}")
+        println(s"starting scan from ${tipTx("txid").str}")
         Database.addTx(bmmHeight, tipTx("txid").str, getBmmHash(tipTx.obj))
         inspectNextBlocks(
           bmmHeight + 1,
           tipTx("txid").str,
-          btcBlock("height").num.toInt + 1
+          scanFromHeight
         )
       }).onComplete {
         case Success(_) =>
@@ -91,11 +98,9 @@ object BitcoinManager {
                 .drop(1) // drop coinbase
                 .find(tx =>
                   tx("vin")(0).pipe(fvin =>
-                    fvin("txid").str == tipTxid &&
-                      // at the bmm transaction that spends from genesis the output
-                      //   may be at any index; but after that it will always be the first
-                      (if bmmHeight == 2 then true else fvin("vout").num == 0)
-                  ) && tx("vout")(0)("value").num == 0.00000738
+                    // it's always the first output and first input
+                    fvin("txid").str == tipTxid && fvin("vout").num == 0
+                  )
                 ) match {
                 case Some(foundTx) =>
                   val txid = foundTx("txid").str

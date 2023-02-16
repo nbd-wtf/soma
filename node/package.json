@@ -5,6 +5,6 @@
     "hyperswarm": "^3.0.4",
     "node-fetch": "3",
     "@noble/secp256k1": "1.6.3",
-    "hash.js": "1.1.7"
+    "@noble/hashes": "1.0.0"
   }
 }
