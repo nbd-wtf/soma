@@ -33,7 +33,7 @@ object BitcoinManager {
           ujson.Arr(txid, 2)
         )
         scanFromHeight <- lastBlockScanned
-          .map(Future(_))
+          .map(last => Future(last + 1))
           .getOrElse(
             BitcoinRPC
               .call(
@@ -43,7 +43,7 @@ object BitcoinManager {
               .map(_("height").num.toInt + 1)
           )
       } yield {
-        println(s"starting scan from ${tipTx("txid").str}")
+        // println(s"starting scan from ${tipTx("txid").str}")
         Database.addTx(bmmHeight, tipTx("txid").str, getBmmHash(tipTx.obj))
         inspectNextBlocks(
           bmmHeight + 1,
@@ -81,6 +81,8 @@ object BitcoinManager {
     BitcoinRPC
       .call("getchaintips")
       .foreach { tips =>
+        lastBlockScanned = Some(height)
+
         if (tips(0)("height").num.toInt < height) {
           // we got to the tip (i.e. the requested height is greater than the chain tip)
           //   stop here (will be tried again in 15 seconds -- or when required)
