@@ -8,6 +8,8 @@ import io.circe._
 import io.circe.parser._
 import io.circe.generic.auto._
 import io.circe.syntax._
+import scodec.bits._
+import scoin.Crypto._
 
 object Config {
   def get: IO[Config] =
@@ -27,8 +29,7 @@ object Config {
       .rethrow
 
   def default = Config(
-    privateKey = scoin.randomBytes32().toHex,
-    miners = List.empty
+    privateKey = scoin.randomBytes32().toHex
   )
 
   def set(newConfig: Config): IO[Unit] =
@@ -48,6 +49,8 @@ object Config {
 }
 
 case class Config(
-    privateKey: String,
-    miners: List[String]
-)
+    privateKey: String
+) {
+  lazy val priv = PrivateKey(ByteVector.fromValidHex(privateKey))
+  lazy val pub = priv.publicKey.xonly
+}

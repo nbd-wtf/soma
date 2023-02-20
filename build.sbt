@@ -71,8 +71,7 @@ lazy val node = project
   .enablePlugins(ScalaJSPlugin)
   .in(file("node"))
 
-lazy val sw = crossProject(JVMPlatform, JSPlatform, NativePlatform)
-  .crossType(CrossType.Pure)
+lazy val sw = project
   .settings(
     name := "soma-cli-wallet",
     libraryDependencies ++= Seq(
@@ -80,18 +79,13 @@ lazy val sw = crossProject(JVMPlatform, JSPlatform, NativePlatform)
       "io.circe" %%% "circe-generic" % "0.14.3",
       "io.circe" %%% "circe-parser" % "0.14.3",
       "org.typelevel" %%% "cats-effect" % "3.4.7",
-      "org.http4s" %%% "http4s-ember-client" % "1.0.0-M39",
-      "com.monovore" %%% "decline" % "2.4.1",
       "co.fs2" %%% "fs2-core" % "3.6.1",
-      "co.fs2" %%% "fs2-io" % "3.6.1"
+      "co.fs2" %%% "fs2-io" % "3.6.1",
+      "com.monovore" %%% "decline" % "2.4.1"
     ),
   )
-  .nativeSettings(
-    libraryDependencies ++= Seq(
-      "com.armanbilge" %%% "epollcat" % "0.1.2",
-    )
-  )
-  .dependsOn(core)
+  .dependsOn(core.native)
+  .enablePlugins(ScalaNativePlugin)
   .in(file("sw"))
 
 lazy val wallet = project

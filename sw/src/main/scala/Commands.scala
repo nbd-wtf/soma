@@ -1,15 +1,20 @@
+import cats.implicits._
+import cats.data.Validated
 import cats.effect.IO
 import cats.effect.std.Console
-import org.http4s.client.Client
 import com.monovore.decline._
 import io.circe.generic.auto._
 import io.circe.syntax._
-import scoin.ln
+import scodec.bits._
+import scoin.Crypto._
+import soma._
 
 sealed trait CommandMethod
+case class Invalid(reason: String) extends CommandMethod
 case object Info extends CommandMethod
-case class AddMiner(uri: String) extends CommandMethod
-case class RemoveMiner(uri: String) extends CommandMethod
+case object Mint extends CommandMethod
+case class Send(asset: Int, counter: Int, to: XOnlyPublicKey)
+    extends CommandMethod
 
 object Commands {
   val root = Command[CommandMethod](
@@ -20,47 +25,74 @@ object Commands {
       Command("info", "Displays wallet info.") {
         Opts.unit.map(_ => Info)
       },
-      Command("miner", "Manage miners.") {
-        Opts.subcommands(
-          Command("add", "Adds a miner to your list.") {
-            Opts
-              .argument[String](metavar = "node uri")
-              .map(uri => AddMiner(uri))
-          },
-          Command("remove", "Remove a miner from your list.") {
-            Opts
-              .argument[String](metavar = "node uri")
-              .map(uri => RemoveMiner(uri))
-          }
+      Command("mint", "Mint a new asset.") {
+        Opts.unit.map(_ => Mint)
+      },
+      Command("send", "Send an asset to someone.") {
+        (
+          Opts
+            .argument[Int]("asset number"),
+          Opts
+            .argument[Int]("asset"),
+          Opts
+            .argument[String]("target pubkey")
+            .mapValidated { arg =>
+              ByteVector
+                .fromHex(arg)
+                .map(scoin.ByteVector32(_))
+                .map(XOnlyPublicKey(_)) match {
+                case Some(xonlypubkey) => Validated.valid(xonlypubkey)
+                case _ =>
+                  Validated.invalidNel(
+                    s"invalid public key '$arg', must be 32 bytes in hex"
+                  )
+              }
+            }
         )
+          .mapN((asset, counter, target) => Send(asset, counter, target))
       }
     )
   }
 
-  def run(config: Config, client: Client[IO], args: List[String]): IO[Unit] =
+  def run(implicit
+      config: Config,
+      args: List[String]
+  ): IO[Int] =
     Commands.root.parse(
       PlatformApp.ambientArgs.getOrElse(args),
       PlatformApp.ambientEnvs.getOrElse(sys.env)
     ) match {
-      case Left(help)              => Console[IO].errorln(help)
-      case Right(Info)             => displayInfo(config)
-      case Right(AddMiner(uri))    => addMiner(config, uri)
-      case Right(RemoveMiner(uri)) => removeMiner(config, uri)
+      case Left(help)                => Console[IO].errorln(help).as(1)
+      case Right(Invalid(message))   => Console[IO].errorln(message).as(2)
+      case Right(Info)               => displayInfo().as(0)
+      case Right(Mint)               => mintNewAsset().as(0)
+      case Right(Send(asset, c, to)) => sendAsset(asset, c, to).as(0)
     }
 
-  def displayInfo(config: Config): IO[Unit] =
+  def displayInfo()(implicit config: Config): IO[Unit] =
     Console[IO].println(config.asJson.spaces2)
 
-  def addMiner(config: Config, uri: String): IO[Unit] =
-    "([a-fA-F0-9]{66})@([a-zA-Z0-9:.\\-_]+):([0-9]+)".r.unapplySeq(uri) match {
-      case Some(x) =>
-        Console[IO].println(x) *> Config.set(
-          config.copy(miners = config.miners :+ uri)
-        )
-      case None => Console[IO].println("Invalid node address.")
-    }
+  def mintNewAsset()(implicit config: Config): IO[Unit] =
+    Console[IO].println(
+      Tx(
+        asset = 0,
+        to = config.pub,
+        counter = 0,
 
-  def removeMiner(config: Config, uri: String): IO[Unit] =
-    Config.set(config.copy(miners = config.miners.filter(_ != uri)))
+        // make this random so the tx id is random
+        from = XOnlyPublicKey(scoin.randomBytes32())
+      ).encoded.toHex
+    )
 
+  def sendAsset(asset: Int, counter: Int, to: XOnlyPublicKey)(implicit
+      config: Config
+  ): IO[Unit] =
+    Console[IO].println(
+      Tx(
+        asset = asset,
+        to = to,
+        from = config.pub,
+        counter = counter
+      ).withSignature(config.priv).encoded.toHex
+    )
 }
