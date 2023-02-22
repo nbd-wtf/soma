@@ -6,7 +6,8 @@ import scodec.bits.ByteVector
 import scoin._
 
 object Datastore {
-  import Main.{logger, rpc}
+  import Main.logger
+  import CLN.rpc
 
   // ~
   // pending transactions

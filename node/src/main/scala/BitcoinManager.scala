@@ -25,7 +25,7 @@ object BitcoinManager {
 
       // start scanning at the genesis tx if we don't have anything in the database
       val (txid, bmmHeight, bmmHash) =
-        Database.getLatestTx().getOrElse((Config.genesisTx, 1, None))
+        Database.getLatestTx().getOrElse((Config.genesisTx, 0, None))
 
       (for {
         tipTx <- BitcoinRPC.call(

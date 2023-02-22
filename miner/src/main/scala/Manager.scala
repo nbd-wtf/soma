@@ -16,7 +16,8 @@ case class Bmm(
 )
 
 object Manager {
-  import Main.{rpc, logger}
+  import Main.logger
+  import CLN.rpc
 
   var latestSeen = Bmm("", 0, None)
 
@@ -346,16 +347,19 @@ object Manager {
 
   def publishBlock(): Future[Unit] = for {
     // get the block to publish containing all our pending txs from the node
-    (bmmhash, block, bmmheight) <- Node.getNextBlock(
+    (bmmhash, block, bmmheight, bmmprevtxid) <- Node.getNextBlock(
       pendingTransactions.values.map((tx, _, _) => tx).toList
     )
+
+    _ = System.err.println(s"$bmmhash | $block | $bmmheight | $bmmprevtxid")
 
     // republish block bmm tx
     bmmTxid <- Publish.publishBmmHash(
       bmmhash,
       bmmheight,
       block,
-      pendingTransactions.values.map((_, fees, _) => fees).sum
+      pendingTransactions.values.map((_, fees, _) => fees).sum,
+      bmmprevtxid
     )
 
     _ = logger.debug.item("bmm-txid", bmmTxid).msg("published bmm hash")

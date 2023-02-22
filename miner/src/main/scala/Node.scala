@@ -45,18 +45,19 @@ object Node {
 
   def getNextBlock(
       txs: Seq[ByteVector]
-  ): Future[(ByteVector32, ByteVector, Int)] =
+  ): Future[(ByteVector32, ByteVector, Int, ByteVector32)] =
     call(
       "makeblock",
       ujson.Obj(
         "txs" -> txs.map(_.toHex)
       )
     )
-      .map(row =>
+      .map(res =>
         (
-          ByteVector32(ByteVector.fromValidHex(row("hash").str)),
-          ByteVector.fromValidHex(row("block").str),
-          row("bmmheight").num.toInt
+          ByteVector32(ByteVector.fromValidHex(res("hash").str)),
+          ByteVector.fromValidHex(res("block").str),
+          res("nextbmmheight").num.toInt,
+          ByteVector32(ByteVector.fromValidHex(res("latestbmmtxid").str))
         )
       )
 

@@ -8,7 +8,8 @@ import scoin._
 import soma.BMM
 
 object Publish {
-  import Main.{logger, rpc}
+  import Main.logger
+  import CLN.rpc
 
   // (bitcoinTxSpent, { bmmHash: block } )
   //   this thing is a tuple so we can more easily keep track of where we are.
@@ -36,14 +37,18 @@ object Publish {
       blockHash: ByteVector32,
       bmmheight: Int,
       block: ByteVector,
-      fee: Satoshi
+      fee: Satoshi,
+      bmmprevtxid: ByteVector32
   ): Future[String] = {
     logger.info
       .item("bmm-hash", blockHash.toHex)
       .item("fee", fee)
       .msg("publishing bmm tx!")
 
-    val precomputed = Psbt(bmm.get(bmmheight))
+    val precomputed = bmm.get(bmmheight, bmmprevtxid)
+    System.err.println(
+      s"precomputed $bmmheight: ${bmm.get(bmmheight, bmmprevtxid).global.tx}"
+    )
 
     addInputsAndChange(
       Psbt(
@@ -64,7 +69,6 @@ object Publish {
     )
       .map(pp => pp.copy(inputs = precomputed.inputs(0) +: pp.inputs.drop(1)))
       .flatMap { psbt =>
-
         // save these as an attempted tx-block publish
         val bitcoinTxSpent = psbt.global.tx.txIn(0).outPoint.txid.toHex
         pendingPublishedBlocks = pendingPublishedBlocks match {
@@ -90,7 +94,7 @@ object Publish {
   }
 
   def publishGenesisTx(fee: Satoshi): Future[String] = {
-    val genesis = Psbt(bmm.get(0))
+    val genesis = Psbt(bmm.getGenesis())
 
     // make a psbt with our inputs
     addInputsAndChange(

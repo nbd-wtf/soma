@@ -193,14 +193,17 @@ object HttpServer {
                 ) match {
                   case Left(err) => throw new Exception(err)
                   case Right(block) =>
+                    val latest = Database.getLatestTx()
                     ujson.Obj(
                       "block" -> Block.codec.encode(block).toOption.get.toHex,
                       "hash" -> block.hash.toHex,
-                      "bmmheight" ->
-                        Database
-                          .getLatestTx()
+                      "nextbmmheight" ->
+                        (1 + latest
                           .map { case (_, bmmheight, _) => bmmheight }
-                          .getOrElse(1)
+                          .getOrElse(0)),
+                      "latestbmmtxid" -> latest
+                        .map { case (txid, _, _) => txid }
+                        .getOrElse(null)
                     )
                 }
               }

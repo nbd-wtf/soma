@@ -17,12 +17,38 @@ class BMM(
   var txs: Seq[Transaction] = Seq.empty
   var startingAt: Int = _
 
-  def get(height: Int): Transaction = {
+  def getGenesis(): Transaction = {
+    require(
+      startingAt == 0,
+      "can't get genesis if the 0th tx isn't precomputed"
+    )
+    txs(0)
+  }
+
+  def get(height: Int, prevOutTxId: ByteVector32): Psbt = {
     require(
       height >= startingAt && txs.size > height - startingAt,
       s"requested transaction ($height) out of range ($startingAt-${startingAt + txs.size}), must load or precompute before"
     )
-    txs(height - startingAt)
+    val tx = txs(height - startingAt)
+    val bound =
+      // update here since only at runtime we know the previous tx id
+      tx.copy(
+        txIn = Seq(
+          tx.txIn(0)
+            .copy(outPoint =
+              tx.txIn(0).outPoint.copy(hash = prevOutTxId.reverse)
+            )
+        )
+      )
+
+    Psbt(bound)
+      .updateWitnessInputTx(txs(height - startingAt - 1), 0)
+      .get
+      .finalizeWitnessInput(0, bound.txIn(0).witness)
+      .get
+      .updateWitnessOutput(0)
+      .get
   }
 
   case class FloatingTransaction(
@@ -97,6 +123,7 @@ class BMM(
     }
 
     groups.foreach { (group, name) =>
+      System.err.println(s"storing $name with ${group.size} txs")
       val file = dir.resolve(name).toFile()
       Protocol.writeCollection(
         group,
@@ -123,6 +150,8 @@ class BMM(
         Protocol.PROTOCOL_VERSION
       )
       startingAt = firstElement
+
+      System.err.println(s"loaded ${txs.size} starting at $startingAt")
     }
   }
 
