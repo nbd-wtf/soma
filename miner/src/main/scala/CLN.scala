@@ -22,14 +22,21 @@ object CLN {
   private var rpcAddrPromise = Promise[String]()
   private var rpcAddr: Future[String] = rpcAddrPromise.future
   private var nextId = 0
+  private var chainHash = ByteVector32.Zeroes
   private var hsmSecret: Path = Paths.get("")
 
-  lazy val bip32: Crypto.PrivateKey = {
+  lazy val bip32: DeterministicWallet.ExtendedPrivateKey = {
     val salt = Array[UByte](0.toByte.toUByte)
     val info = "bip32 seed".getBytes().map(_.toUByte)
     val secret = Files.readAllBytes(hsmSecret).map(_.toUByte)
     val sk = hkdf256.hkdf(salt, secret, info, 32)
-    Crypto.PrivateKey(ByteVector32(ByteVector(sk.map(_.toByte))))
+    DeterministicWallet.ExtendedPrivateKey(
+      ByteVector32(ByteVector(sk.map(_.toByte))),
+      chainHash,
+      0,
+      DeterministicWallet.KeyPath("m/0/0"),
+      0
+    )
   }
 
   def run(): Unit = {
@@ -170,8 +177,48 @@ object CLN {
         rpcAddrPromise.success(
           lightningDir + "/" + params("configuration")("rpc-file").str
         )
-        hsmSecret = Paths.get(lightningDir).resolve("hsm_secret")
         Node.nodeUrl = params("options")("node-url").str
+        hsmSecret = Paths.get(lightningDir).resolve("hsm_secret")
+
+        rpc("getinfo")
+          .map(_("network").str)
+          .map({
+            case "bitcoin" => Block.LivenetGenesisBlock.hash
+            case "testnet" => Block.TestnetGenesisBlock.hash
+            case "signet"  => Block.SignetGenesisBlock.hash
+            case "regtest" => Block.RegtestGenesisBlock.hash
+            case chain =>
+              throw IllegalArgumentException(s"bad chain '$chain'")
+          })
+          .foreach { ch =>
+            chainHash = ch
+
+            // FIXME remove this
+            System.err.println(
+              DeterministicWallet.encode(bip32, DeterministicWallet.xprv)
+            )
+            System.err.println(
+              DeterministicWallet.encode(
+                DeterministicWallet.ExtendedPublicKey(
+                  bip32.publicKey.value,
+                  chainHash,
+                  0,
+                  DeterministicWallet.KeyPath.Root,
+                  0
+                ),
+                DeterministicWallet.xpub
+              )
+            )
+            List.range(0, 5).foreach { n =>
+              val sk = DeterministicWallet.derivePrivateKey(
+                bip32,
+                DeterministicWallet.KeyPath(Seq(n.toLong))
+              )
+              System.err.println(
+                s"$n: ${sk.privateKey} => ${sk.publicKey} ~ ${sk.publicKey.hash160}"
+              )
+            }
+          }
       }
       case "block_added" =>
         Main.operational.foreach { _ =>
