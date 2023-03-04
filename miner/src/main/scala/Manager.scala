@@ -351,7 +351,7 @@ object Manager {
       pendingTransactions.values.map((tx, _, _) => tx).toList
     )
 
-    _ = System.err.println(s"$bmmhash | $block | $bmmheight | $bmmprevtxid")
+    // _ = System.err.println(s"$bmmhash | $block | $bmmheight | $bmmprevtxid")
 
     // republish block bmm tx
     bmmTxid <- Publish.publishBmmHash(

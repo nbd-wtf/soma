@@ -192,32 +192,6 @@ object CLN {
           })
           .foreach { ch =>
             chainHash = ch
-
-            // FIXME remove this
-            System.err.println(
-              DeterministicWallet.encode(bip32, DeterministicWallet.xprv)
-            )
-            System.err.println(
-              DeterministicWallet.encode(
-                DeterministicWallet.ExtendedPublicKey(
-                  bip32.publicKey.value,
-                  chainHash,
-                  0,
-                  DeterministicWallet.KeyPath.Root,
-                  0
-                ),
-                DeterministicWallet.xpub
-              )
-            )
-            List.range(0, 5).foreach { n =>
-              val sk = DeterministicWallet.derivePrivateKey(
-                bip32,
-                DeterministicWallet.KeyPath(Seq(n.toLong))
-              )
-              System.err.println(
-                s"$n: ${sk.privateKey} => ${sk.publicKey} ~ ${sk.publicKey.hash160}"
-              )
-            }
           }
       }
       case "block_added" =>

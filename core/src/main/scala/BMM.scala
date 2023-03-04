@@ -2,6 +2,7 @@ package soma
 
 import java.nio.file.{Paths, Path, Files}
 import scala.collection.mutable.ArrayBuffer
+import scala.util.chaining._
 import scodec.bits.ByteVector
 import scoin._
 import scoin.Protocol._
@@ -25,7 +26,10 @@ class BMM(
     txs(0)
   }
 
-  def get(height: Int, prevOutTxId: ByteVector32): Psbt = {
+  def get(
+      height: Int,
+      prevOutTxId: ByteVector32
+  ): (Transaction, TxOut, ByteVector) = {
     require(
       height >= startingAt && txs.size > height - startingAt,
       s"requested transaction ($height) out of range ($startingAt-${startingAt + txs.size}), must load or precompute before"
@@ -42,13 +46,11 @@ class BMM(
         )
       )
 
-    Psbt(bound)
-      .updateWitnessInputTx(txs(height - startingAt - 1), 0)
-      .get
-      .finalizeWitnessInput(0, bound.txIn(0).witness)
-      .get
-      .updateWitnessOutput(0)
-      .get
+    (
+      bound,
+      txs(height - startingAt - 1).txOut(0),
+      txs(height - startingAt + 1).txIn(0).signatureScript
+    )
   }
 
   case class FloatingTransaction(

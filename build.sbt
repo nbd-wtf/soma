@@ -36,6 +36,7 @@ lazy val miner = project
       "com.fiatjaf" %%% "sn-unixsocket" % "0.2.0",
       "com.github.lolgab" %%% "httpclient" % "0.0.1",
       "com.github.lolgab" %%% "native-loop-core" % "0.2.1",
+      "com.softwaremill.quicklens" %%% "quicklens" % "1.9.0"
     ),
     nativeConfig := {
       val conf = nativeConfig.value
