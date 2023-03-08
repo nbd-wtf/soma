@@ -99,7 +99,15 @@ object HttpServer {
             case "getassetowner" =>
               Future {
                 Database
-                  .getAssetOwner(params("asset").num.toInt)
+                  .getAssetOwner(
+                    params("asset").numOpt
+                      .map(_.toInt)
+                      .getOrElse(
+                        ByteVector
+                          .fromValidHex(params("asset").str)
+                          .toInt(signed = false)
+                      )
+                  )
                   .map[ujson.Value](_.toHex)
                   .getOrElse(ujson.Null)
               }
@@ -115,7 +123,7 @@ object HttpServer {
                   )
                   .map((asset, counter) =>
                     ujson.Obj(
-                      "asset" -> asset,
+                      "asset" -> asset.toHexString,
                       "counter" -> counter
                     )
                   )
