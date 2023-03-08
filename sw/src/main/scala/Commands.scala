@@ -31,9 +31,9 @@ object Commands {
       Command("send", "Send an asset to someone.") {
         (
           Opts
-            .argument[Int]("asset number"),
-          Opts
             .argument[Int]("asset"),
+          Opts
+            .argument[Int]("counter"),
           Opts
             .argument[String]("target pubkey")
             .mapValidated { arg =>
