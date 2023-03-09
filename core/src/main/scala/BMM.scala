@@ -5,6 +5,7 @@ import scala.collection.mutable.ArrayBuffer
 import scala.util.chaining._
 import scodec.bits.ByteVector
 import scoin._
+import scoin.Crypto.XOnlyPublicKey
 import scoin.Protocol._
 
 class BMM(
@@ -15,7 +16,7 @@ class BMM(
   val priv = Crypto.PrivateKey(1)
   val pub = priv.publicKey
 
-  var txs: Seq[Transaction] = Seq.empty
+  var sigs: Seq[ByteVector64] = Seq.empty
   var startingAt: Int = _
 
   def getGenesis(): Transaction = {
@@ -23,7 +24,15 @@ class BMM(
       startingAt == 0,
       "can't get genesis if the 0th tx isn't precomputed"
     )
-    txs(0)
+    val nextSig = sigs(1)
+
+    Transaction(
+      version = 2,
+      lockTime = 0,
+      txIn =
+        List.empty, // must be filled by the initiator of the chain with their own inputs
+      txOut = List(getTxOutFromNextSig(nextSig))
+    )
   }
 
   def get(
@@ -31,76 +40,31 @@ class BMM(
       prevOutTxId: ByteVector32
   ): (Transaction, TxOut, ByteVector) = {
     require(
-      height >= startingAt && txs.size > height - startingAt,
-      s"requested transaction ($height) out of range ($startingAt-${startingAt + txs.size}), must load or precompute before"
+      height >= startingAt && sigs.size > height - startingAt,
+      s"requested transaction ($height) out of range ($startingAt-${startingAt + sigs.size}), must load or precompute before"
     )
-    val tx = txs(height - startingAt)
-    val bound =
-      // update here since only at runtime we know the previous tx id
-      tx.copy(
-        txIn = Seq(
-          tx.txIn(0)
-            .copy(outPoint =
-              tx.txIn(0).outPoint.copy(hash = prevOutTxId.reverse)
-            )
+    val nextSig = sigs(height - startingAt + 1)
+    val currentSig = sigs(height - startingAt)
+
+    val tx = Transaction(
+      version = 2,
+      lockTime = 0,
+      txIn = List(
+        TxIn(
+          OutPoint(hash = prevOutTxId.reverse, index = 0),
+          signatureScript = ByteVector.empty,
+          1,
+          witness = witnessFromSig(currentSig)
         )
-      )
+      ),
+      txOut = List(getTxOutFromNextSig(nextSig))
+    )
 
     (
-      bound,
-      txs(height - startingAt - 1).txOut(0),
-      txs(height - startingAt + 1).txIn(0).signatureScript
+      tx,
+      getTxOutFromNextSig(currentSig),
+      tx.txOut(0).publicKeyScript
     )
-  }
-
-  case class FloatingTransaction(
-      tx: Transaction,
-      sig: ByteVector64
-  ) {
-    def bind(
-        input: Transaction,
-        script: List[ScriptElt],
-        controlBlock: ByteVector
-    ): Transaction =
-      tx.copy(txIn =
-        List(
-          TxIn(
-            OutPoint(input, 0),
-            signatureScript = ByteVector.empty,
-            1,
-            witness = ScriptWitness(
-              List(
-                Script.write(script),
-                controlBlock
-              )
-            )
-          )
-        )
-      )
-  }
-
-  def precompute(startAt: Int, count: Int): Unit = {
-    var currIdx = totalSize
-    var currTx = lastTx
-
-    // regress until we reach the highest bmmtx number we want to keep
-    while (currIdx >= startAt + count) {
-      val (previous, _) = regress(currTx)
-      currTx = previous
-      currIdx = currIdx - 1
-    }
-
-    // now regress until the lowest number and this time store everything
-    val stored = ArrayBuffer.empty[Transaction]
-    while (currIdx >= startAt) {
-      val (previous, next) = regress(currTx)
-      stored += next
-      currTx = previous
-      currIdx = currIdx - 1
-    }
-
-    txs = stored.reverse.toSeq
-    startingAt = startAt
   }
 
   val dir =
@@ -114,9 +78,9 @@ class BMM(
       val GROUP_SIZE = 144 * 7 * 6
       val firstGroupStart = startingAt % GROUP_SIZE
       val firstGroupSize = GROUP_SIZE - firstGroupStart
-      val firstGroup = txs.take(firstGroupSize)
+      val firstGroup = sigs.take(firstGroupSize)
       val groups =
-        firstGroup +: txs.drop(firstGroupSize).grouped(GROUP_SIZE).toSeq
+        firstGroup +: sigs.drop(firstGroupSize).grouped(GROUP_SIZE).toSeq
       groups.zipWithIndex.map { (tx, i) =>
         val groupStart = i * GROUP_SIZE + startingAt / GROUP_SIZE
         val groupEnd = groupStart + GROUP_SIZE
@@ -126,12 +90,9 @@ class BMM(
 
     groups.foreach { (group, name) =>
       System.err.println(s"storing $name with ${group.size} txs")
-      val file = dir.resolve(name).toFile()
-      Protocol.writeCollection(
-        group,
-        new java.io.FileOutputStream(file),
-        Protocol.PROTOCOL_VERSION
-      )
+      val file = dir.resolve(name)
+      val data = group.map(_.bytes.toArray).flatten
+      Files.write(file, data.toArray)
     }
   }
 
@@ -147,17 +108,39 @@ class BMM(
       val firstGroupName = firstElement.toString()
       val first = dir.resolve(firstGroupName).toFile()
 
-      txs = Protocol.readCollection[Transaction](
-        new java.io.FileInputStream(dir.resolve(firstFilename).toFile()),
-        Protocol.PROTOCOL_VERSION
-      )
-      startingAt = firstElement
+      val bytes =
+        ByteVector.view(Files.readAllBytes(dir.resolve(firstFilename)))
+      sigs = bytes.grouped(64).map(ByteVector64(_)).toSeq
 
-      System.err.println(s"loaded ${txs.size} starting at $startingAt")
+      System.err.println(s"loaded ${sigs.size} starting at $startingAt")
     }
   }
 
-  private def lastTx: FloatingTransaction = {
+  def precompute(startAt: Int, count: Int): Unit = {
+    var currIdx = totalSize
+    var currSig = lastTxSignature()
+
+    // regress until we reach the highest bmmtx number we want to keep
+    while (currIdx >= startAt + count) {
+      val previous = signTx(currSig)
+      currSig = previous
+      currIdx = currIdx - 1
+    }
+
+    // now regress until the lowest number and this time store everything
+    val stored = ArrayBuffer.empty[ByteVector64]
+    while (currIdx >= startAt) {
+      stored += currSig
+      val previous = signTx(currSig)
+      currSig = previous
+      currIdx = currIdx - 1
+    }
+
+    sigs = stored.reverse.toSeq
+    startingAt = startAt
+  }
+
+  private def lastTxSignature(): ByteVector64 = {
     val tx = Transaction(
       version = 2,
       txIn = List(TxIn.placeholder(sequence)),
@@ -186,40 +169,14 @@ class BMM(
       tapleafHash = None
     )
 
-    val sig = Crypto.signSchnorr(hash, priv, None)
-
-    FloatingTransaction(tx, sig)
+    Crypto.signSchnorr(hash, priv, None)
   }
 
-  def regress(next: FloatingTransaction): (FloatingTransaction, Transaction) = {
-    // the script contains the signature of the next transaction
-    val script = List(
-      OP_PUSHDATA(
-        next.sig ++ ByteVector
-          .fromInt((SIGHASH_ANYPREVOUTANYSCRIPT | SIGHASH_SINGLE), 1)
-      ),
-      OP_1,
-      OP_CHECKSIG
-    )
-
-    // simple script tree with a single element
-    val scriptTree = ScriptTree.Leaf(
-      ScriptLeaf(0, Script.write(script), Script.TAPROOT_LEAF_TAPSCRIPT)
-    )
-    val merkleRoot = ScriptTree.hash(scriptTree)
-
-    val internalPubkey = pub.xonly
-    val tweakedKey = internalPubkey.outputKey(Some(merkleRoot))
-    val parity = tweakedKey.publicKey.isOdd
-
-    val controlBlock = ByteVector(
-      (Script.TAPROOT_LEAF_TAPSCRIPT + (if (parity) 1 else 0)).toByte
-    ) ++ internalPubkey.value
-
+  private def signTx(sigNextTx: ByteVector64): ByteVector64 = {
     val tx = Transaction(
       version = 2,
       txIn = List(TxIn.placeholder(sequence)),
-      txOut = List(TxOut(amount, List(OP_1, OP_PUSHDATA(tweakedKey)))),
+      txOut = List(getTxOutFromNextSig(sigNextTx)),
       lockTime = 0
     )
 
@@ -234,9 +191,61 @@ class BMM(
       tapleafHash = None
     )
 
-    val sig = Crypto.signSchnorr(hash, priv, None)
-    val nextTx = next.bind(tx, script, controlBlock)
-
-    (FloatingTransaction(tx, sig), nextTx)
+    // sign the transaction with the internal private key (not tweaked)
+    Crypto.signSchnorr(hash, priv, None)
   }
+
+  private def getTxOutFromNextSig(nextSig: ByteVector64): TxOut = {
+    val merkleRoot = merkleRootFromSig(nextSig)
+
+    // tweak the internal pubkey with the merkle root
+    val (tweakedKey, parity) = pub.xonly.tapTweak(Some(merkleRoot))
+
+    val controlBlock = ByteVector(
+      (Script.TAPROOT_LEAF_TAPSCRIPT + (if (parity) 1 else 0)).toByte
+    ) ++ pub.xonly.value
+
+    TxOut(amount, List(OP_1, OP_PUSHDATA(tweakedKey)))
+  }
+
+  private def witnessFromSig(sig: ByteVector64): ScriptWitness = {
+    val script = scriptFromSig(sig)
+    val merkleRoot = merkleRootFromSig(sig)
+
+    val (_, parity) = pub.xonly.tapTweak(Some(merkleRoot))
+
+    val controlBlock = ByteVector(
+      (Script.TAPROOT_LEAF_TAPSCRIPT + (if (parity) 1 else 0)).toByte
+    ) ++ pub.xonly.value
+
+    ScriptWitness(
+      List(
+        Script.write(script),
+        controlBlock
+      )
+    )
+  }
+
+  private def merkleRootFromSig(sig: ByteVector64): ByteVector32 = {
+    val script = scriptFromSig(sig)
+
+    // simple script tree with a single element
+    val scriptTree = ScriptTree.Leaf(
+      ScriptLeaf(0, Script.write(script), Script.TAPROOT_LEAF_TAPSCRIPT)
+    )
+    ScriptTree.hash(scriptTree)
+  }
+
+  def scriptFromSig(sig: ByteVector64): List[ScriptElt] =
+    // the script contains the signature of the next transaction (in case we're just
+    // committing to an output with a tweaked key) or the current transaction (in
+    // case we're publishing the witness in a txIn)
+    List(
+      OP_PUSHDATA(
+        sig ++ ByteVector
+          .fromInt((SIGHASH_ANYPREVOUTANYSCRIPT | SIGHASH_SINGLE), 1)
+      ),
+      OP_1,
+      OP_CHECKSIG
+    )
 }

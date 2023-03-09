@@ -29,7 +29,7 @@ object Publish {
   // precomputed bmm txs
   val bmm = new BMM(totalSize = 100, amount = 1234.sat, sequence = 1)
   bmm.load()
-  if (bmm.txs.size == 0) {
+  if (bmm.sigs.size == 0) {
     bmm.precompute(0, 50)
     bmm.store()
   }

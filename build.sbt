@@ -18,7 +18,7 @@ lazy val core = crossProject(JVMPlatform, JSPlatform, NativePlatform)
   .settings(
     name := "soma-core",
     libraryDependencies ++= Seq(
-      "com.fiatjaf" %%% "scoin" % "0.6.1-SNAPSHOT",
+      "com.fiatjaf" %%% "scoin" % "0.7.1-SNAPSHOT",
 
       "com.lihaoyi" %%% "utest" % "0.8.0" % Test
     ),
