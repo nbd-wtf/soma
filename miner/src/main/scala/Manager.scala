@@ -29,10 +29,25 @@ object Manager {
     Map.empty
   val pendingHtlcs: Map[String, Promise[Boolean]] = Map.empty
 
-  // this debouncing works both for skipping the initial burst of blocks
-  lazy val onBlock = Helpers.debounce(onBlock_, 2.seconds)
+  // poll the node to get the current state of our pending bmm txs
+  Timer.repeat(60.seconds)(() => checkBMMChainAdvanced())
+  private var bitcoinHeight = 0
+  private var lastCheckedBMMChainAdvanced = System.currentTimeMillis()
 
-  def onBlock_(bitcoinHeight: Int): Future[Unit] = {
+  def onBlock(height: Int): Unit = {
+    bitcoinHeight = height
+
+    // this is to prevent us from calling this too many times in a row on
+    if (
+      lastCheckedBMMChainAdvanced + 1000 * 60 * 10 // 10 seconds
+        < System.currentTimeMillis()
+    ) {
+      lastCheckedBMMChainAdvanced = System.currentTimeMillis()
+      checkBMMChainAdvanced()
+    }
+  }
+
+  def checkBMMChainAdvanced(): Unit = if (bitcoinHeight != 0) {
     logger.debug
       .item("latest", latestSeen)
       .item("pending-blocks", Publish.pendingPublishedBlocks._2.keySet)
@@ -146,8 +161,6 @@ object Manager {
             }
           }
       }
-
-    Future {}
   }
 
   def filterOutTransactionsNotValidAnymore(): Future[Unit] = {

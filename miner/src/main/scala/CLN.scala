@@ -25,20 +25,6 @@ object CLN {
   private var chainHash = ByteVector32.Zeroes
   private var hsmSecret: Path = Paths.get("")
 
-  lazy val bip32: DeterministicWallet.ExtendedPrivateKey = {
-    val salt = Array[UByte](0.toByte.toUByte)
-    val info = "bip32 seed".getBytes().map(_.toUByte)
-    val secret = Files.readAllBytes(hsmSecret).map(_.toUByte)
-    val sk = hkdf256.hkdf(salt, secret, info, 32)
-    DeterministicWallet.ExtendedPrivateKey(
-      ByteVector32(ByteVector(sk.map(_.toByte))),
-      chainHash,
-      0,
-      DeterministicWallet.KeyPath("m/0/0"),
-      0
-    )
-  }
-
   def run(): Unit = {
     Poll(0).startRead { v =>
       var current = Array.empty[Byte]
