@@ -1,13 +1,13 @@
-import scala.util.chaining._
+import scala.util.chaining.*
 import scala.language.implicitConversions
-import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
-import scala.scalajs.js.JSConverters._
+import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits.*
+import scala.scalajs.js.JSConverters.*
 import scala.scalajs.js
 import scala.scalajs.js.annotation.JSImport
 import scala.scalajs.js.typedarray.Uint8Array
 import scodec.bits.ByteVector
-import scoin.{Block => _, _}
-import soma._
+import scoin.{Block => *, *}
+import soma.*
 
 object Database {
   private var db: Database = _

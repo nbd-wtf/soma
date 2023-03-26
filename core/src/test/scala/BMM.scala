@@ -1,8 +1,8 @@
 package soma
 
-import utest._
-import scoin._
-import scoin.Protocol._
+import utest.*
+import scoin.*
+import scoin.Protocol.*
 
 object BMMTest extends TestSuite {
   val tests = Tests {

@@ -1,13 +1,13 @@
 import scala.collection.mutable.Map
 import scala.concurrent.{Promise, Future}
 import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.duration._
-import scala.util.chaining._
+import scala.concurrent.duration.*
+import scala.util.chaining.*
 import scala.util.{Try, Success, Failure}
-import scalanative.unsigned._
+import scalanative.unsigned.*
 import scala.scalanative.loop.Timer
 import scodec.bits.ByteVector
-import scoin._
+import scoin.*
 
 case class Bmm(
     txid: String,

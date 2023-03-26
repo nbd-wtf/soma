@@ -1,10 +1,10 @@
 package soma
 
-import scala.util.chaining._
+import scala.util.chaining.*
 import scodec.bits.ByteVector
-import scodec.codecs._
+import scodec.codecs.*
 import scodec.Codec
-import scoin._
+import scoin.*
 import scoin.CommonCodecs.{bytes32, bytes64, xonlypublickey}
 
 case class Block(height: Long, header: BlockHeader, txs: List[Tx]) {

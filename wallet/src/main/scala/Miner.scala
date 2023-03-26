@@ -1,19 +1,19 @@
 import scala.util.{Success, Failure, Try}
-import scala.util.chaining._
-import scala.concurrent.duration.{span => _, _}
+import scala.util.chaining.*
+import scala.concurrent.duration.{span => *, *}
 import scala.concurrent.Future
 import scala.scalajs.js
 import org.scalajs.dom
-import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
+import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits.*
 import sttp.model.Uri
-import com.raquo.laminar.api.L._
-import io.circe._
-import io.circe.syntax._
-import io.circe.parser._
-import io.circe.generic.auto._
+import com.raquo.laminar.api.L.*
+import io.circe.*
+import io.circe.syntax.*
+import io.circe.parser.*
+import io.circe.generic.auto.*
 import scodec.bits.{ByteVector, BitVector}
 import scoin.{Satoshi, NumericSatoshi, ByteVector32}
-import soma._
+import soma.*
 
 case class Miner(pubkey: String, host: String, rune: String) {
   val commando = new Commando(pubkey, host, rune)

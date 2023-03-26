@@ -3,13 +3,13 @@ import cats.effect.IO
 import cats.effect.std.Console
 import fs2.{Stream, text}
 import fs2.io.file.{Files, Path}
-import com.monovore.decline._
-import io.circe._
-import io.circe.parser._
-import io.circe.generic.auto._
-import io.circe.syntax._
-import scodec.bits._
-import scoin._
+import com.monovore.decline.*
+import io.circe.*
+import io.circe.parser.*
+import io.circe.generic.auto.*
+import io.circe.syntax.*
+import scodec.bits.*
+import scoin.*
 
 object Config {
   def get: IO[Config] =

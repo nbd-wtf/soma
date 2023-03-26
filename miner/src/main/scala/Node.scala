@@ -3,8 +3,8 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.Failure
 import scodec.bits.ByteVector
 import com.github.lolgab.httpclient.{Request, Method}
-import ujson._
-import scoin._
+import ujson.*
+import scoin.*
 
 object Node {
   import Main.logger

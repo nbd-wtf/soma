@@ -1,8 +1,8 @@
 import scala.util.{Success, Failure}
-import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
+import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits.*
 import org.scalajs.dom
-import com.raquo.laminar.api.L._
-import soma._
+import com.raquo.laminar.api.L.*
+import soma.*
 
 object BlockView {
   val blocks: Signal[List[BmmTx]] = Main.info.changes

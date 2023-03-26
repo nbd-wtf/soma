@@ -1,6 +1,6 @@
-import scala.util.chaining._
+import scala.util.chaining.*
 import scala.scalajs.js
-import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
+import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits.*
 import scoin.ByteVector32
 
 object StateManager {

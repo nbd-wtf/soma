@@ -1,7 +1,7 @@
-import upickle.default._
+import upickle.default.*
 import scodec.bits.ByteVector
-import scoin.{Block => _, BlockHeader => _, _}
-import soma._
+import scoin.{Block => *, BlockHeader => *, *}
+import soma.*
 
 object Picklers {
   given ReadWriter[Block] = ReadWriter.join(

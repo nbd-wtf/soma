@@ -1,13 +1,13 @@
-import scala.util.chaining._
+import scala.util.chaining.*
 import scala.concurrent.Future
 import scala.scalajs.js
 import org.scalajs.dom
-import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
-import com.raquo.laminar.api.L._
-import sttp.client3._
-import io.circe._
-import io.circe.syntax._
-import io.circe.parser._
+import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits.*
+import com.raquo.laminar.api.L.*
+import sttp.client3.*
+import io.circe.*
+import io.circe.syntax.*
+import io.circe.parser.*
 
 object BMM {
   def render(): HtmlElement =

@@ -2,10 +2,10 @@ package soma
 
 import java.nio.file.{Paths, Path, Files}
 import scala.collection.mutable.ArrayBuffer
-import scala.util.chaining._
+import scala.util.chaining.*
 import scodec.bits.ByteVector
-import scoin._
-import scoin.Protocol._
+import scoin.*
+import scoin.Protocol.*
 
 class BMM(
     val totalSize: Int = 144 * 365 * 100, // 100 years

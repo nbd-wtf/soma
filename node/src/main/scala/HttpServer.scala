@@ -1,15 +1,15 @@
-import scala.util.chaining._
+import scala.util.chaining.*
 import scala.util.{Success, Failure}
 import scala.concurrent.Future
 import scala.scalajs.js
 import scala.scalajs.js.annotation.JSImport
 import scodec.bits.ByteVector
 import scodec.DecodeResult
-import upickle.default._
+import upickle.default.*
 import scala.scalajs.js.typedarray.Uint8Array
-import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
-import scoin.{Block => _, _}
-import soma._
+import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits.*
+import scoin.{Block => *, *}
+import soma.*
 
 import Picklers.given
 

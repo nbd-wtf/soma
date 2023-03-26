@@ -1,13 +1,13 @@
-import cats.implicits._
+import cats.implicits.*
 import cats.data.Validated
 import cats.effect.IO
 import cats.effect.std.Console
-import com.monovore.decline._
-import io.circe.generic.auto._
-import io.circe.syntax._
-import scodec.bits._
-import scoin._
-import soma._
+import com.monovore.decline.*
+import io.circe.generic.auto.*
+import io.circe.syntax.*
+import scodec.bits.*
+import scoin.*
+import soma.*
 
 sealed trait CommandMethod
 case class Invalid(reason: String) extends CommandMethod

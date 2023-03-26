@@ -1,7 +1,7 @@
-import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
+import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits.*
 import org.scalajs.dom
-import com.raquo.laminar.api.L._
-import soma._
+import com.raquo.laminar.api.L.*
+import soma.*
 
 object AssetView {
   val assets: Signal[Map[String, String]] = Main.info.changes

@@ -1,7 +1,7 @@
 package soma
 
 import scodec.bits.ByteVector
-import scodec.codecs._
+import scodec.codecs.*
 import scodec.Codec
 import scoin.ByteVector32
 import scoin.CommonCodecs.{bytes32}

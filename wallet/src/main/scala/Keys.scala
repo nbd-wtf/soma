@@ -1,11 +1,11 @@
 import scala.concurrent.Future
 import scala.util.Random
-import scala.util.chaining._
+import scala.util.chaining.*
 import scala.scalajs.js
-import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
-import com.raquo.laminar.api.L._
+import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits.*
+import com.raquo.laminar.api.L.*
 import scodec.bits.ByteVector
-import scoin._
+import scoin.*
 
 object Keys {
   val privkey: Future[PrivateKey] =

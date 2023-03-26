@@ -5,16 +5,16 @@ import scala.util.{Try, Success, Failure}
 import scala.annotation.nowarn
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.{Promise, Future}
-import scala.concurrent.duration._
-import scala.scalanative.unsigned._
+import scala.concurrent.duration.*
+import scala.scalanative.unsigned.*
 import scala.scalanative.loop.EventLoop.loop
 import scala.scalanative.loop.{Poll, Timer}
-import scala.util.chaining._
-import scala.util.control.Breaks._
-import scodec.bits._
-import ujson._
+import scala.util.chaining.*
+import scala.util.control.Breaks.*
+import scodec.bits.*
+import ujson.*
 import unixsocket.UnixSocket
-import scoin._
+import scoin.*
 
 object CLN {
   import Main.logger

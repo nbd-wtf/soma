@@ -3,7 +3,7 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import scala.util.{Success, Failure}
 import scodec.bits.ByteVector
-import scoin._
+import scoin.*
 
 object Datastore {
   import Main.logger

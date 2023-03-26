@@ -1,11 +1,11 @@
-import scala.util.chaining._
+import scala.util.chaining.*
 import scala.util.{Success, Failure}
 import scala.scalajs.js.typedarray.Uint8Array
-import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
+import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits.*
 import scodec.bits.ByteVector
 import scodec.{Attempt, DecodeResult}
 import scoin.ByteVector32
-import soma._
+import soma.*
 
 object PeerManager {
   var peers: List[Conn] = List.empty

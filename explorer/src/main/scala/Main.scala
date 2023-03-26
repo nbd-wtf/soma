@@ -1,10 +1,10 @@
 import scala.util.{Try, Success}
 import scala.scalajs.js
-import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
+import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits.*
 import org.scalajs.dom
 import sttp.model.Uri
-import com.raquo.laminar.api.L._
-import soma._
+import com.raquo.laminar.api.L.*
+import soma.*
 
 object Main {
   val info: Signal[NodeInfo] = EventStream

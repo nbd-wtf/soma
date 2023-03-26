@@ -1,4 +1,4 @@
-import scala.scalajs.js.annotation._
+import scala.scalajs.js.annotation.*
 import scala.scalajs.js
 import org.scalajs.dom
 

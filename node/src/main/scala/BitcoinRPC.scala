@@ -1,9 +1,9 @@
-import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
+import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits.*
 import scala.concurrent.Future
 import scala.scalajs.js
 import scala.scalajs.js.annotation.JSImport
 import scala.scalajs.js.typedarray.Uint8Array
-import sttp.client3._
+import sttp.client3.*
 import sttp.model.Uri
 
 object BitcoinRPC {

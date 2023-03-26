@@ -1,10 +1,10 @@
-import scala.util.chaining._
+import scala.util.chaining.*
 import scala.concurrent.{Future, Promise}
-import concurrent.duration._
+import concurrent.duration.*
 import scala.util.{Success, Failure}
 import scala.scalajs.js
 import scala.scalajs.js.typedarray.Uint8Array
-import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
+import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits.*
 import scodec.bits.ByteVector
 import scoin.ByteVector32
 

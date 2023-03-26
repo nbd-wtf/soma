@@ -1,11 +1,11 @@
 import scala.util.Success
-import scala.util.chaining._
-import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
+import scala.util.chaining.*
+import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits.*
 import scala.concurrent.Future
 import scala.scalajs.js
 import io.circe.Json
-import io.circe.syntax._
-import io.circe.scalajs._
+import io.circe.syntax.*
+import io.circe.scalajs.*
 
 class Commando(nodeId: String, host: String, rune: String) {
   def rpc(

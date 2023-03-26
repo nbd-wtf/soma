@@ -1,17 +1,17 @@
 import scala.util.{Try, Success}
-import scala.util.chaining._
+import scala.util.chaining.*
 import scala.concurrent.Future
 import scala.scalajs.js
-import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
+import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits.*
 import org.scalajs.dom
-import sttp.client3._
+import sttp.client3.*
 import sttp.model.Uri
-import io.circe._
-import io.circe.syntax._
-import io.circe.parser._
-import io.circe.generic.auto._
+import io.circe.*
+import io.circe.syntax.*
+import io.circe.parser.*
+import io.circe.generic.auto.*
 import scodec.bits.ByteVector
-import scoin._
+import scoin.*
 
 import JSON.given
 

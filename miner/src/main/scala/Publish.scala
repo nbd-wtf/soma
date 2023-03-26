@@ -1,11 +1,11 @@
 import scala.util.{Success, Failure}
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
-import scala.Ordering.Implicits._
-import scala.util.chaining._
-import com.softwaremill.quicklens._
+import scala.Ordering.Implicits.*
+import scala.util.chaining.*
+import com.softwaremill.quicklens.*
 import scodec.bits.ByteVector
-import scoin._
+import scoin.*
 import soma.BMM
 
 object Publish {
