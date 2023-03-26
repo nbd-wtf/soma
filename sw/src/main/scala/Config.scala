@@ -9,7 +9,7 @@ import io.circe.parser._
 import io.circe.generic.auto._
 import io.circe.syntax._
 import scodec.bits._
-import scoin.Crypto._
+import scoin._
 
 object Config {
   def get: IO[Config] =

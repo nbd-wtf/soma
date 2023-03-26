@@ -6,8 +6,7 @@ import scala.scalajs.js
 import scala.scalajs.js.annotation.JSImport
 import scala.scalajs.js.typedarray.Uint8Array
 import scodec.bits.ByteVector
-import scoin.{Crypto, ByteVector32, ByteVector64}
-import scoin.Crypto.XOnlyPublicKey
+import scoin._
 import soma._
 
 object Database {

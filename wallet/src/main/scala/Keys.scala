@@ -6,7 +6,6 @@ import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
 import com.raquo.laminar.api.L._
 import scodec.bits.ByteVector
 import scoin._
-import scoin.Crypto.{XOnlyPublicKey, PrivateKey}
 
 object Keys {
   val privkey: Future[PrivateKey] =

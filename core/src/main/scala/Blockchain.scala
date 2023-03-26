@@ -4,7 +4,7 @@ import scala.util.chaining._
 import scodec.bits.ByteVector
 import scodec.codecs._
 import scodec.Codec
-import scoin.{Crypto, ByteVector32, ByteVector64}
+import scoin._
 import scoin.CommonCodecs.{bytes32, bytes64, xonlypublickey}
 
 case class Block(height: Long, header: BlockHeader, txs: List[Tx]) {
@@ -39,8 +39,8 @@ object BlockHeader {
 case class Tx(
     counter: Int,
     asset: Int,
-    from: Crypto.XOnlyPublicKey,
-    to: Crypto.XOnlyPublicKey,
+    from: XOnlyPublicKey,
+    to: XOnlyPublicKey,
     signature: ByteVector64 = ByteVector64.Zeroes
 ) {
   def hash: ByteVector32 =
@@ -60,7 +60,7 @@ case class Tx(
     .get
     .toByteVector
 
-  def withSignature(privateKey: Crypto.PrivateKey): Tx = {
+  def withSignature(privateKey: PrivateKey): Tx = {
     require(
       privateKey.publicKey.xonly == from,
       "must sign tx with `from` key."

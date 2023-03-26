@@ -10,8 +10,7 @@ import io.circe.syntax._
 import io.circe.parser._
 import io.circe.generic.auto._
 import scodec.bits.ByteVector
-import scoin.{ByteVector32, ByteVector64}
-import scoin.Crypto.{XOnlyPublicKey}
+import scoin.{XOnlyPublicKey, ByteVector32, ByteVector64}
 import soma._
 
 import JSON.given

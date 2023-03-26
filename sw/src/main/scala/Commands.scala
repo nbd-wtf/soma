@@ -6,7 +6,7 @@ import com.monovore.decline._
 import io.circe.generic.auto._
 import io.circe.syntax._
 import scodec.bits._
-import scoin.Crypto._
+import scoin._
 import soma._
 
 sealed trait CommandMethod

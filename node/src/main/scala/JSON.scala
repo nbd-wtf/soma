@@ -38,7 +38,7 @@ object Picklers {
     readwriter[ByteVector].bimap[ByteVector32](_.bytes, ByteVector32(_))
   given ReadWriter[ByteVector64] =
     readwriter[ByteVector].bimap[ByteVector64](_.bytes, ByteVector64(_))
-  given ReadWriter[Crypto.XOnlyPublicKey] =
+  given ReadWriter[XOnlyPublicKey] =
     readwriter[ByteVector32]
-      .bimap[Crypto.XOnlyPublicKey](_.value, Crypto.XOnlyPublicKey(_))
+      .bimap[XOnlyPublicKey](_.value, XOnlyPublicKey(_))
 }

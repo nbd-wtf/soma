@@ -5,7 +5,6 @@ import scala.collection.mutable.ArrayBuffer
 import scala.util.chaining._
 import scodec.bits.ByteVector
 import scoin._
-import scoin.Crypto.XOnlyPublicKey
 import scoin.Protocol._
 
 class BMM(
@@ -13,7 +12,7 @@ class BMM(
     val sequence: Int = 1, // minimum of 1 block of relative interval
     val amount: Satoshi = 1871.sat
 ) {
-  val priv = Crypto.PrivateKey(1)
+  val priv = PrivateKey(1)
   val pub = priv.publicKey
 
   var sigs: Seq[ByteVector64] = Seq.empty

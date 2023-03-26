@@ -12,7 +12,6 @@ import io.circe.parser._
 import io.circe.generic.auto._
 import scodec.bits.ByteVector
 import scoin._
-import scoin.Crypto.{XOnlyPublicKey, PrivateKey}
 
 import JSON.given
 

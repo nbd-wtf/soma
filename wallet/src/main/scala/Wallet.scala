@@ -11,7 +11,6 @@ import io.circe._
 import io.circe.syntax._
 import io.circe.parser._
 import scoin._
-import scoin.Crypto.{XOnlyPublicKey, PrivateKey}
 import soma._
 
 object Wallet {
