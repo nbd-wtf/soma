@@ -6,7 +6,7 @@ import scala.scalajs.js
 import scala.scalajs.js.annotation.JSImport
 import scala.scalajs.js.typedarray.Uint8Array
 import scodec.bits.ByteVector
-import scoin._
+import scoin.{Block => _, _}
 import soma._
 
 object Database {

@@ -8,7 +8,7 @@ import scodec.DecodeResult
 import upickle.default._
 import scala.scalajs.js.typedarray.Uint8Array
 import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits._
-import scoin._
+import scoin.{Block => _, _}
 import soma._
 
 import Picklers.given
