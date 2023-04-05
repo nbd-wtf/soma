@@ -15,7 +15,7 @@ case class Invalid(reason: String) extends CommandMethod
 case object Info extends CommandMethod
 case class Decode(stuff: String) extends CommandMethod
 case object Mint extends CommandMethod
-case class Send(asset: Int, counter: Int, to: XOnlyPublicKey)
+case class Send(asset: String, counter: Int, to: XOnlyPublicKey)
     extends CommandMethod
 
 object Commands {
@@ -38,7 +38,7 @@ object Commands {
       Command("send", "Send an asset to someone.") {
         (
           Opts
-            .argument[Int]("asset"),
+            .argument[String]("asset"),
           Opts
             .argument[Int]("counter"),
           Opts
@@ -112,12 +112,12 @@ object Commands {
       ).encoded.toHex
     )
 
-  def sendAsset(asset: Int, counter: Int, to: XOnlyPublicKey)(implicit
+  def sendAsset(asset: String, counter: Int, to: XOnlyPublicKey)(implicit
       config: Config
   ): IO[Unit] =
     Console[IO].println(
       Tx(
-        asset = asset,
+        asset = ByteVector.fromValidHex(asset).toInt(signed = false),
         to = to,
         from = config.pub,
         counter = counter
