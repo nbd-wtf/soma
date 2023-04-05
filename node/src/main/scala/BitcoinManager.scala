@@ -13,54 +13,47 @@ object BitcoinManager {
   private var startedP = Future.successful(())
   private var lastBlockScanned: Option[Int] = None
 
-  private def started =
-    !startedP.isCompleted // if completed means we're not working
-
   // start returns a future that resolves once there are not more bitcoin blocks to scan
-  def start(): Future[Unit] =
-    if (started) Future.successful(())
-    else {
-      p = Promise[Unit]()
-      startedP = p.future
+  def start(): Future[Unit] = {
+    p = Promise[Unit]()
+    startedP = p.future
 
-      // start scanning at the genesis tx if we don't have anything in the database
-      val (txid, bmmHeight, bmmHash) =
-        Database.getLatestTx().getOrElse((Config.genesisTx, 0, None))
+    // start scanning at the genesis tx if we don't have anything in the database
+    val (txid, bmmHeight, bmmHash) =
+      Database.getLatestTx().getOrElse((Config.genesisTx, 0, None))
 
-      (for {
-        tipTx <- BitcoinRPC.call(
-          "getrawtransaction",
-          ujson.Arr(txid, 2)
+    (for {
+      tipTx <- BitcoinRPC.call(
+        "getrawtransaction",
+        ujson.Arr(txid, 2)
+      )
+      scanFromHeight <- lastBlockScanned
+        .map(last => Future(last + 1))
+        .getOrElse(
+          BitcoinRPC
+            .call(
+              "getblock",
+              ujson.Arr(tipTx("blockhash").str)
+            )
+            .map(_("height").num.toInt + 1)
         )
-        scanFromHeight <- lastBlockScanned
-          .map(last => Future(last + 1))
-          .getOrElse(
-            BitcoinRPC
-              .call(
-                "getblock",
-                ujson.Arr(tipTx("blockhash").str)
-              )
-              .map(_("height").num.toInt + 1)
-          )
-      } yield {
-        // println(s"starting scan from ${tipTx("txid").str}")
-        Database.addTx(bmmHeight, tipTx("txid").str, getBmmHash(tipTx.obj))
-        inspectNextBlocks(
-          bmmHeight + 1,
-          tipTx("txid").str,
-          scanFromHeight
-        )
-      }).onComplete {
-        case Success(_) =>
-        case Failure(err) =>
-          println(s"failed to get genesis transaction: $err")
-      }
-
-      startedP.andThen { _ =>
-        // schedule to retry in 15 seconds
-        js.timers.setTimeout(15.seconds) { start() }
-      }
+    } yield {
+      Database.addTx(bmmHeight, tipTx("txid").str, getBmmHash(tipTx.obj))
+      inspectNextBlocks(
+        bmmHeight + 1,
+        tipTx("txid").str,
+        scanFromHeight
+      )
+    }).onComplete {
+      case Success(_) =>
+      case Failure(err) =>
+        println(s"failed to get genesis transaction: $err")
     }
+
+    startedP.andThen { _ =>
+      js.timers.setTimeout(25.seconds) { start() }
+    }
+  }
 
   private def getBmmHash(tx: ujson.Obj): Option[ByteVector32] = {
     if (
@@ -81,11 +74,10 @@ object BitcoinManager {
     BitcoinRPC
       .call("getchaintips")
       .foreach { tips =>
-        lastBlockScanned = Some(height)
-
         if (tips(0)("height").num.toInt < height) {
           // we got to the tip (i.e. the requested height is greater than the chain tip)
-          //   stop here (will be tried again in 15 seconds -- or when required)
+          //   stop here (will be tried again in 25 seconds -- or when required)
+          println(s"block $height is still not mined on bitcoin, waiting...")
           p.success(())
         } else {
           println(s"inspecting bitcoin block $height for bmm $bmmHeight... ")
@@ -96,6 +88,7 @@ object BitcoinManager {
               BitcoinRPC.call("getblock", ujson.Arr(hash, 2))
             }
             .foreach { block =>
+              lastBlockScanned = Some(height)
               block("tx").arr
                 .drop(1) // drop coinbase
                 .find(tx =>
