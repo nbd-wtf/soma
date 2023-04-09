@@ -66,7 +66,7 @@ lazy val node = project
       "org.scala-js" %%% "scala-js-macrotask-executor" % "1.0.0",
       "com.softwaremill.sttp.client3" %%% "core" % "3.7.4"
     ),
-    scalaJSLinkerConfig ~= { _.withModuleKind(ModuleKind.ESModule) },
+    scalaJSLinkerConfig ~= { _.withModuleKind(ModuleKind.CommonJSModule) },
   )
   .dependsOn(core.js)
   .enablePlugins(ScalaJSPlugin)

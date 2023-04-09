@@ -1,9 +1,8 @@
 {
-  "type": "module",
   "dependencies": {
     "better-sqlite3": "^7.6.2",
     "hyperswarm": "^3.0.4",
-    "node-fetch": "3",
+    "node-fetch": "2",
     "@noble/secp256k1": "1.6.3",
     "@noble/hashes": "1.0.0"
   }
