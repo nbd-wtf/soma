@@ -13,7 +13,7 @@ object AssetView {
       cls := "my-3",
       div(cls := "text-xl", "assets"),
       div(
-        cls := "flex flex-wrap bg-amber-100 text-black pl-2 pt-2",
+        cls := "flex flex-wrap text-black pl-2 pt-2",
         children <-- assets.map(
           _.map(renderAsset(_, _)).toList
         )
@@ -22,7 +22,7 @@ object AssetView {
 
   def renderAsset(asset: String, owner: String): HtmlElement =
     div(
-      cls := "mb-2 mr-2 py-3 pl-2 pr-2 border-2 border-indigo-400",
+      cls := "mb-2 mr-2 py-3 pl-2 pr-2 border-2",
       styleAttr := "max-width: 45%",
       div(
         cls := "w-full",

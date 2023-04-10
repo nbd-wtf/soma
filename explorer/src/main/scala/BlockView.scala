@@ -23,11 +23,11 @@ object BlockView {
     )
 
   final val cellClass =
-    "px-3 py-1 border border-amber-600 text-ellipsis overflow-hidden"
+    "px-3 py-1 border text-ellipsis overflow-hidden"
 
   def renderBlock(bmm: BmmTx): HtmlElement =
     div(
-      cls := "text-lg bg-amber-100 text-black w-fit max-w-full",
+      cls := "text-lg text-black w-fit max-w-full",
       div(
         cls := "flex",
         div(
