@@ -58,11 +58,11 @@ RUN cd /soma/node && npm install
 CMD tmux new-session \; \
 set -g mouse on \; \
   rename-window bitcoind \; \
-  send-keys './bitcoin-inq-v24.0/bin/bitcoind -signet -txindex=1 -addnode=81.204.239.212 -addnode=209.141.62.48 -addnode=49.12.208.214 -addnode=135.181.215.237 -addnode=128.199.252.50 -addnode=95.217.184.148 -addnode=172.105.179.233 -addnode=45.79.105.203 -addnode=103.16.128.63 -addnode=209.141.62.48 -addnode=inquisition.bitcoin-signet.net' C-m \; \
+  send-keys './bitcoin-inq-v24.0/bin/bitcoind -signet -txindex=1 -rpcuser=x -rpcpassword=x -addnode=81.204.239.212 -addnode=209.141.62.48 -addnode=49.12.208.214 -addnode=135.181.215.237 -addnode=128.199.252.50 -addnode=95.217.184.148 -addnode=172.105.179.233 -addnode=45.79.105.203 -addnode=103.16.128.63 -addnode=209.141.62.48 -addnode=inquisition.bitcoin-signet.net' C-m \; \
 new-window -n lightningd \; \
   send-keys 'lightningd --network signet --min-capacity-sat=1000 --database-upgrade=true --plugin /soma/miner/target/scala-3.2.2/soma-miner-out --bitcoin-cli /bitcoin-inq-v24.0/bin/bitcoin-cli' \; \
 new-window -c /soma -n somad \; \
-  send-keys 'BITCOIN_CHAIN=signet BITCOIND_USER=fiatjaf BITCOIND_PASSWORD=fiatjaf GENESIS_TX=60b4190b2ae6d4cb5e4d366e2867f726be401adbc0b2a6fa2a1e8fe55fb0fb70 node ./node/target/scala-3.2.2/soma-node-opt/main.js' \; \
+  send-keys 'BITCOIN_CHAIN=signet BITCOIND_USER=x BITCOIND_PASSWORD=x GENESIS_TX=60b4190b2ae6d4cb5e4d366e2867f726be401adbc0b2a6fa2a1e8fe55fb0fb70 node ./node/target/scala-3.2.2/soma-node-opt/main.js' \; \
 new-window -c /soma -n misc \; \
 new-window -c /soma -n wallet \; \
   send-keys './sw/target/scala-3.2.2/soma-cli-wallet-out mint' \; \
