@@ -3,7 +3,7 @@
 This must be compiled first with
 
 ```
-sbt 'wallet/fullLinkJS/esBuild' -DdefaultNodeUrl='http://127.0.0.1:9036' -DdefaultTxExplorerUrl='https://mempool.space/tx/' -DdefaultMiner='nodePubkey:commandoRune@ipaddress:port'
+sbt 'wallet/fullLinkJS/esBuild' -DdefaultNodePort='9036' -DdefaultTxExplorerUrl='https://mempool.space/tx/' -DdefaultMiner='nodePubkey:commandoRune@ipaddress:port'
 ```
 
 (Replace parameters above with the correct values for your setup, above are the defaults, except for default miner for which there is no default.)

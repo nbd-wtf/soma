@@ -55,11 +55,13 @@ object Node {
   ) match {
     case Success(Right(s)) => s
     case _ =>
-      Uri.unsafeParse(
-        js.Dynamic.global.NODE_URL
-          .asInstanceOf[String]
-          .pipe(s => if s.startsWith("http") then s else s"http://$s")
-      )
+      Uri
+        .unsafeParse(dom.window.location.href)
+        .port(
+          js.Dynamic.global.NODE_PORT
+            .asInstanceOf[String]
+            .toInt
+        )
   }
 }
 

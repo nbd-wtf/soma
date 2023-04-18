@@ -43,7 +43,7 @@ RUN cp /soma/miner/target/scala-3.2.2/soma-miner-out /
 
 # explorer
 COPY explorer/ /soma/explorer
-RUN cd /soma && /sbt/sbt/bin/sbt 'explorer/fullLinkJS/esBuild' -DdefaultNodeUrl='http://127.0.0.1:9036' -DdefaultTxExplorerUrl='https://mempool.space/signet/tx/'
+RUN cd /soma && /sbt/sbt/bin/sbt 'explorer/fullLinkJS/esBuild' -DdefaultNodePort='9036' -DdefaultTxExplorerUrl='https://mempool.space/signet/tx/'
 
 # sw
 COPY sw/ /soma/sw

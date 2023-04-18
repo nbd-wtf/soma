@@ -3,7 +3,7 @@
 Compile with
 
 ```
-sbt 'explorer/fullLinkJS/esBuild' -DdefaultNodeUrl='http://127.0.0.1:9036' -DdefaultTxExplorerUrl='https://mempool.space/tx/'
+sbt 'explorer/fullLinkJS/esBuild' -DdefaultNodePort='9036' -DdefaultTxExplorerUrl='https://mempool.space/tx/'
 ```
 
 (Replace parameters above with the correct values for your setup, above are the defaults.)

@@ -10,7 +10,7 @@ ThisBuild / tlSonatypeUseLegacyHost := false
 Global / onChangedBuildSource := ReloadOnSourceChanges
 
 val defaultMiner = sys.props.getOrElse("defaultMiner", default = "")
-val defaultNodeUrl = sys.props.getOrElse("defaultNodeUrl", default = "127.0.0.1:9036")
+val defaultNodePort = sys.props.getOrElse("defaultNodePort", default = "9036")
 val defaultTxExplorerUrl = sys.props.getOrElse("defaultTxExplorerUrl", default = "https://mempool.space/tx/")
 
 lazy val core = crossProject(JVMPlatform, JSPlatform, NativePlatform)
@@ -109,7 +109,7 @@ lazy val wallet = project
     ),
     esbuildOptions ++= Seq(
       "--target=es2020",
-      s"""--define:NODE_URL="${defaultNodeUrl}"""",
+      s"""--define:NODE_PORT="${defaultNodePort}"""",
       s"""--define:TX_EXPLORER_URL="${defaultTxExplorerUrl}"""",
       s"""--define:DEFAULT_MINER="${defaultMiner}""""
     ),
@@ -137,7 +137,7 @@ lazy val explorer = project
       "org.typelevel" %%% "cats-core" % "2.9-826466b-SNAPSHOT",
     ),
     esbuildOptions ++= Seq(
-      s"""--define:NODE_URL="${defaultNodeUrl}"""",
+      s"""--define:NODE_PORT="${defaultNodePort}"""",
       s"""--define:TX_EXPLORER_URL="${defaultTxExplorerUrl}""""
     ),
     esPackageManager := Yarn,
