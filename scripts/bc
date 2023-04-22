@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+
+/bitcoin-inq-v24.0/bin/bitcoin-cli -signet -rpcuser=x -rpcpassword=x "$@"

@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+
+/usr/local/bin/lightning-cli --network signet "$@"

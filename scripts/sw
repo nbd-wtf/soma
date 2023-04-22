@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+/soma/sw/target/scala-3.2.2/soma-cli-wallet-out "$@"
+

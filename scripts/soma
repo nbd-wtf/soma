@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+
+payload=$(jq -crn --arg method "$1" --arg arg1 "$2" --arg arg2 "$3" "[\$arg1, \$arg2] | map(select(. != \"\")) | map(split(\"=\") | {key:.[0],value:.[1]}) | from_entries | {\$method, params: .}")
+response=$(curl http://127.0.0.1:9036 -s -d $payload)
+echo $response | jq -r '(.error //.result)'
