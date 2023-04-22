@@ -247,7 +247,7 @@ object Manager {
           promise.success(false)
 
         case Success(invoice) =>
-          val fee = MilliSatoshi(invoice("msatoshi").num.toLong)
+          val fee = MilliSatoshi(invoice("amount_msat").num.toLong)
 
           // parse the txid from the invoice description and get the full tx from our cache
           val txid = invoice("description").str
