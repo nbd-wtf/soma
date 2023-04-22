@@ -2,11 +2,21 @@ FROM node:lts-bullseye
 
 # prepare
 RUN apt update
-RUN apt install git clang binutils build-essential libtool automake autoconf wget unzip python3 openjdk-11-jdk libcurl4 libgmp-dev libsqlite3-dev python3 python3-pip net-tools zlib1g-dev libsodium-dev gettext tmux -y
+RUN apt install git clang binutils build-essential libtool automake autoconf wget unzip python3 openjdk-11-jdk curl libcurl4 libgmp-dev libsqlite3-dev python3 python3-pip net-tools zlib1g-dev libsodium-dev gettext tmux jq -y
 RUN git clone https://github.com/libuv/libuv && cd libuv && ./autogen.sh && ./configure && make && make install
 RUN cp /usr/local/lib/libuv* /usr/lib/x86_64-linux-gnu/
 RUN git clone https://github.com/bitcoin-core/secp256k1 && cd secp256k1 && ./autogen.sh && ./configure --enable-module-schnorrsig --enable-module-recovery && make && make install
 RUN cp /usr/local/lib/libsecp256k1* /usr/lib/x86_64-linux-gnu/
+
+# prepare helpers
+COPY scripts/bc /usr/local/bin/bc
+COPY scripts/cln /usr/local/bin/cln
+COPY scripts/sw /usr/local/bin/sw
+COPY scripts/soma /usr/local/bin/soma
+RUN chmod +x /usr/local/bin/bc
+RUN chmod +x /usr/local/bin/cln
+RUN chmod +x /usr/local/bin/sw
+RUN chmod +x /usr/local/bin/soma
 
 # sbt
 RUN mkdir /sbt
@@ -25,7 +35,7 @@ RUN tar -xf bitcoin-inq-v24.0-x86_64-linux-gnu.tar.gz
 RUN pip3 install --upgrade pip
 RUN pip3 install --user poetry
 RUN git clone https://github.com/ElementsProject/lightning
-RUN cd lightning && pip3 install --upgrade pip && pip3 install mako && ./configure && make && make install
+RUN cd lightning && git checkout 822db6acc26f1a55a0a97bc485ec38ae40a49f40 && pip3 install --upgrade pip && pip3 install mako && ./configure && make && make install
 
 # base source
 RUN mkdir -p /soma/project
@@ -60,17 +70,18 @@ set -g mouse on \; \
   rename-window bitcoind \; \
   send-keys './bitcoin-inq-v24.0/bin/bitcoind -signet -txindex=1 -rpcuser=x -rpcpassword=x -addnode=81.204.239.212 -addnode=209.141.62.48 -addnode=49.12.208.214 -addnode=135.181.215.237 -addnode=128.199.252.50 -addnode=95.217.184.148 -addnode=172.105.179.233 -addnode=45.79.105.203 -addnode=103.16.128.63 -addnode=209.141.62.48 -addnode=inquisition.bitcoin-signet.net' C-m \; \
 new-window -n lightningd \; \
-  send-keys 'lightningd --network signet --min-capacity-sat=1000 --database-upgrade=true --plugin /soma/miner/target/scala-3.2.2/soma-miner-out --bitcoin-cli /bitcoin-inq-v24.0/bin/bitcoin-cli' \; \
+  send-keys 'lightningd --network signet --min-capacity-sat=1000 --database-upgrade=true --plugin /soma/miner/target/scala-3.2.2/soma-miner-out --bitcoin-cli /bitcoin-inq-v24.0/bin/bitcoin-cli --bitcoin-rpcuser=x --bitcoin-rpcpassword=x --allow-deprecated-apis=false' \; \
 new-window -c /soma -n somad \; \
-  send-keys 'BITCOIN_CHAIN=signet BITCOIND_USER=x BITCOIND_PASSWORD=x GENESIS_TX=60b4190b2ae6d4cb5e4d366e2867f726be401adbc0b2a6fa2a1e8fe55fb0fb70 node ./node/target/scala-3.2.2/soma-node-opt/main.js' \; \
+  send-keys 'BITCOIN_CHAIN=signet BITCOIND_USER=x BITCOIND_PASSWORD=x GENESIS_TX=e9bef3cb223055463f8b7e6acee883edcf0405fcdd37e2690690ff2e58840959 node ./node/target/scala-3.2.2/soma-node-opt/main.js' \; \
 new-window -c /soma -n misc \; \
 new-window -c /soma -n wallet \; \
-  send-keys './sw/target/scala-3.2.2/soma-cli-wallet-out mint' \; \
+  send-keys 'sw' C-m \; \
   split \; \
-    send-keys 'lightning-cli --network signet newaddr ' \; \
-  split \; \
-    send-keys 'lightning-cli --network signet pay ' \; \
+    send-keys 'soma info && soma listallassets && soma getaccountassets pubkey=$(sw info | jq -r .pubkey' \; \
 new-window -c soma/explorer -n explorer \; \
   send-keys 'python3 -m http.server 8080' C-m \; \
+prev \; \
+prev \; \
+prev \; \
 prev \; \
 prev
