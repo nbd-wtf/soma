@@ -2,6 +2,7 @@ import scala.util.chaining.*
 import scala.scalajs.js
 import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits.*
 import scoin.ByteVector32
+import soma.*
 
 object StateManager {
   private var started = false

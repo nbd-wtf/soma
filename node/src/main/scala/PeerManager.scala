@@ -1,5 +1,6 @@
 import scala.util.chaining.*
 import scala.util.{Success, Failure}
+import scala.scalajs.js
 import scala.scalajs.js.typedarray.Uint8Array
 import org.scalajs.macrotaskexecutor.MacrotaskExecutor.Implicits.*
 import scodec.bits.ByteVector
@@ -50,6 +51,8 @@ object PeerManager {
         println(s"got message: $value")
         value match {
           case RequestBlock(hash) =>
+            val block = Database.getBlock(hash)
+            println(s"sending block $hash: ${block.isDefined}")
             peer.write(
               WireMessage.codec
                 .encode(
@@ -64,18 +67,24 @@ object PeerManager {
                 .toUint8Array
             )
 
+          case AnswerBlock(hash, Some(block)) if block.hash != hash =>
+            println(s"got an invalid block message for ${hash.toHex}")
+
+          case AnswerBlock(hash, Some(block)) if block.hash != hash =>
+            println(s"got an invalid block message for ${hash.toHex}")
+
           case AnswerBlock(hash, Some(block))
-              if block.hash != hash || !Blockchain.validateBlock(block) =>
+              if !Blockchain.validateBlock(block) =>
             println(s"got an invalid block for ${hash.toHex}")
 
           case AnswerBlock(hash, Some(block)) =>
+            println(s"got block $hash")
             Database.insertBlock(hash, block) match {
               case true =>
-                println(s"block inserted at height ${block.height}")
-
-                // restarting state manager, it will do the right thing
-                StateManager.start()
-
+                println(s"block $hash inserted at height ${block.height}")
+                if (Blockchain.blockIsNext(block)) {
+                  StateManager.start()
+                }
               case false => println("failed to insert")
             }
 

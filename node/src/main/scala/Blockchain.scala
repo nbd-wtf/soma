@@ -37,21 +37,20 @@ object Blockchain {
       Right(block)
     }
 
+  def blockIsNext(block: Block): Boolean =
+    block.height == 1 && block.header.previous == ByteVector32.Zeroes ||
+      Database
+        .getBlockHeight(block.header.previous)
+        .map(_ + 1 == block.height)
+        .getOrElse(false)
+
   def validateBlock(block: Block): Boolean =
     // block doesn't mint more assets than it should
     block.txs.filter(_.isNewAsset).size <= Block.MaxMintsPerBlock &&
       // all transactions are valid
       validateTxs(block.txs.toSet) &&
       // merkle root is valid
-      block.header.merkleRoot == Tx.merkleRoot(block.txs) &&
-      // block height is valid
-      (
-        block.height == 1 && block.header.previous == ByteVector32.Zeroes ||
-          Database
-            .getBlockHeight(block.header.previous)
-            .map(_ + 1 == block.height)
-            .getOrElse(false)
-      )
+      block.header.merkleRoot == Tx.merkleRoot(block.txs)
 
   def validateTxs(txs: Set[Tx]): Boolean =
     txs.forall(thisTx =>
