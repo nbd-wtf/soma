@@ -77,7 +77,7 @@ new-window -c /soma -n misc \; \
 new-window -c /soma -n wallet \; \
   send-keys 'sw' C-m \; \
   split \; \
-    send-keys 'soma info && soma listallassets && soma getaccountassets pubkey=$(sw info | jq -r .pubkey' \; \
+    send-keys 'soma info && soma listallassets && soma getaccountassets pubkey=$(sw info | jq -r .pubkey)' \; \
 new-window -c soma/explorer -n explorer \; \
   send-keys 'python3 -m http.server 8080' C-m \; \
 prev \; \
