@@ -12,13 +12,13 @@ After starting, you'll be dropped in a `tmux` interface. It has a bunch of pre-c
 With `lightningd` running you can jump to the next tab and run some commands to get a Lightning channel to one of the Spacechain miners.
 
 1. First you'll need to get some signet coins: `cln newaddr` will print an address, take it and paste it on https://signetfaucet.com/
-2. After you got the coins, connect and open a channel to this miner (or use some other miner if you know any): `cln connect 035aa926b4b467fc89819cade52f2639abe9d3909f0d0d6282d34bd3e068d78110@107.189.30.195:39735 && cln fundchannel 035aa926b4b467fc89819cade52f2639abe9d3909f0d0d6282d34bd3e068d78110 all 1500perkb`
+2. After you got the coins, connect and open a channel to this miner (or use some other miner if you know any): `cln connect 035aa926b4b467fc89819cade52f2639abe9d3909f0d0d6282d34bd3e068d78110@198.98.50.157:39735 && cln fundchannel 035aa926b4b467fc89819cade52f2639abe9d3909f0d0d6282d34bd3e068d78110 all 1500perkb`
 
 While the channel is being published we can explore other things.
 
 ## Exploring the spacechain
 
-Your container should have been running a server hosting a simple chain explorer page for the spacechain. You can open your browser at http://127.0.0.1:8080 to see it. That explorer fetches data directly from your `soma` daemon. There is a public explorer at http://107.189.30.195:8080/.
+Your container should have been running a server hosting a simple chain explorer page for the spacechain. You can open your browser at http://127.0.0.1:8080 to see it. That explorer fetches data directly from your `soma` daemon. There is a public explorer at http://198.98.50.157:8080/.
 
 ## Minting an asset
 
