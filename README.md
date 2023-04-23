@@ -18,7 +18,7 @@ While the channel is being published we can explore other things.
 
 ## Exploring the spacechain
 
-Your container should have been running a server hosting a simple chain explorer page for the spacechain. You can open your browser at http://127.0.0.1:8080 to see it. That explorer fetches data directly from your `soma` daemon. There is a public explorer at http://turgot.fiatjaf.com:8080/.
+Your container should have been running a server hosting a simple chain explorer page for the spacechain. You can open your browser at http://127.0.0.1:8080 to see it. That explorer fetches data directly from your `soma` daemon. There is a public explorer at http://107.189.30.195:8080/.
 
 ## Minting an asset
 
