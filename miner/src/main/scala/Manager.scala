@@ -59,7 +59,7 @@ object Manager {
       .onComplete {
         case Failure(err) =>
           logger.err.item(err).msg("failed to get bmm entries")
-        case Success(bmms) =>
+        case Success(bmms) if bmms.size > 0 =>
           logger.debug.item("bmms", bmms.size).msg("got new bmm entries")
           bmms.foreach { bmm =>
             logger.debug.item("bmm", bmm).msg("  ")
@@ -160,6 +160,7 @@ object Manager {
               }
             }
           }
+        case _ =>
       }
   }
 
