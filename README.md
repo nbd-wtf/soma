@@ -44,3 +44,7 @@ After confirming that you own an asset you'll also need its current `counter` --
 - `soma listallassets` lists all assets that exist.
 - `sw decode <tx>` decodes transactions from hex into meaningful JSON.
 - `soma info` displays the current state of the chain and of the merge-mining.
+
+## Talking to a human
+
+Join https://t.me/spacechains
