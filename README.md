@@ -1,7 +1,7 @@
 Spacechain-inspired Open Market for Assets
 ==========================================
 
-This is a demo Spacechain. Spacechains can be used for all your wild ideas that need a blockchain, as long as they don't require a native currency (such as a Bitcoin). In this demo, we have in our hands a full fledged blockchain that does one thing: let's you issue and transfer non-fungible assets, each having a deterministically-generated unique identifier.
+This is a demo Spacechain. [Spacechains](https://gist.github.com/RubenSomsen/c9f0a92493e06b0e29acced61ca9f49a#spacechains) can be used for all your wild ideas that need a blockchain, as long as they don't require a native currency (such as a bitcoin). In this demo, we have in our hands a fully-fledged blockchain that does one very boring thing: let's you issue and transfer non-fungible assets, each having a deterministically-generated unique identifier.
 
 To run the demo, start your Soma toolkit by running `docker run -it -p 8080:8080 -p 39735:39735 -p 9036:9036 -v ~/soma:/root --name soma --rm fiatjaf/soma`. This will start a container running `bitcoind` on signet, and ready to start a CLN `lightningd` node and a `soma` node daemon. The data will be saved at `~/soma`, in case you want to delete it later.
 
@@ -18,7 +18,7 @@ While the channel is being published we can explore other things.
 
 ## Exploring the spacechain
 
-Your container should have been running a server hosting a simple chain explorer page for the spacechain. You can open your browser at http://127.0.0.1:8080 to see it. That explorer fetches data directly from your `soma` daemon.
+Your container should have been running a server hosting a simple chain explorer page for the spacechain. You can open your browser at http://127.0.0.1:8080 to see it. That explorer fetches data directly from your `soma` daemon. There is a public explorer at http://turgot.fiatjaf.com:8080/.
 
 ## Minting an asset
 
@@ -36,7 +36,11 @@ To check what assets you own you can call `soma getaccountassets pubkey=<your-pu
 
 After confirming that you own an asset you'll also need its current `counter` -- which you can get from the `getaccountassets` call above, it is just a dummy number -- then call `sw send <asset-id> <counter> <target-pubkey>`. This will give you a transaction encoded as hex, which you can mine in the same way as above.
 
-## Other useful commands
+## Cheatsheet of useful commands
 
-- `sw decode` decodes transactions from hex into meaningful JSON.
+- `sw mint` generates a transaction that mints an asset.
+- `sw send <asset> <counter> <target-pubkey>` generates a transaction that sends an existing asset from you to someone else.
+- `soma getaccountassets pubkey=<your-pubkey>` lists all your assets.
+- `soma listallassets` lists all assets that exist.
+- `sw decode <tx>` decodes transactions from hex into meaningful JSON.
 - `soma info` displays the current state of the chain and of the merge-mining.
