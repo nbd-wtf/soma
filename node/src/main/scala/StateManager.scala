@@ -16,18 +16,24 @@ object StateManager {
   }
 
   private def processBlocksFrom(height: Int, bmmHash: ByteVector32): Unit = {
-    Database.getBlockAtHeight(height) match {
-      case Some(block) if (block.header.previous == bmmHash) => {
+    Database.getBlocksAtHeight(height) match {
+      case block :: Nil if block.header.previous == bmmHash =>
         println(s"processing block at $height")
 
-        // process this
-        Database.processBlock(height, block)
-
-        // ask for the next
-        processBlocksFrom(height + 1, block.hash)
-      }
-      case Some(block) =>
-        // block's previous is a different hash than the current, i.e. we have a chain split
+        if (Blockchain.validateBlock(block)) {
+          // process this
+          Database.processBlock(height, block)
+          // ask for the next
+          processBlocksFrom(height + 1, block.hash)
+        } else {
+          println(s"block at $height is invalid, stopping here")
+          started = false
+        }
+      case Nil =>
+        // no blocks after this one, we'll stop here and wait for a new block to arrive
+        started = false
+      case _ =>
+        // multiple blocks or a block that has an unexpected bmm hash, means we got a chain split
         println(s"chain split at $height!")
         // instead of walking in the dark let's check if we have a winner from the split after all
         Database.getUniqueHighestBlockHeight() match {
@@ -52,9 +58,6 @@ object StateManager {
             // now proceed from there
             processBlocksFrom(highestHeight + 1, blocks.last.hash)
         }
-      case None =>
-        // no blocks after this one, we'll stop here and wait for a new block to arrive
-        started = false
     }
   }
 }

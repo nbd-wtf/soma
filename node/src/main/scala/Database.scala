@@ -156,10 +156,16 @@ object Database {
   def getBlock(bmmHash: ByteVector32): Option[Block] =
     asBlockOpt(getBlockStmt.get(bmmHash))
 
-  private lazy val getBlockAtHeightStmt =
+  private lazy val getBlocksAtHeightStmt =
     db.prepare("SELECT block FROM blocks WHERE blockheight = ?")
-  def getBlockAtHeight(height: Int): Option[Block] =
-    asBlockOpt(getBlockAtHeightStmt.get(height))
+  def getBlocksAtHeight(height: Int): List[Block] =
+    getBlocksAtHeightStmt
+      .all(height)
+      .toList
+      .map(rowToBlock)
+      .collect { case Some(block) =>
+        block
+      }
 
   private lazy val getBlockAtBmmHeightStmt =
     db.prepare("SELECT block FROM blocks WHERE bmmheight = ?")
@@ -167,22 +173,22 @@ object Database {
     asBlockOpt(getBlockAtBmmHeightStmt.get(bmmHeight))
 
   private[this] def asBlockOpt(row: js.UndefOr[js.Dynamic]): Option[Block] =
-    row.toOption
-      .flatMap(row =>
-        row
-          .selectDynamic("block")
-          .asInstanceOf[Uint8Array]
-          .pipe(v => if v == null then None else Some(v))
-          .flatMap(uint8arr =>
-            Block.codec
-              .decode(
-                ByteVector
-                  .fromUint8Array(uint8arr)
-                  .toBitVector
-              )
-              .toOption
-              .map(_.value)
+    row.toOption.flatMap(row => rowToBlock(row))
+
+  private[this] def rowToBlock(row: js.Dynamic): Option[Block] =
+    row
+      .selectDynamic("block")
+      .asInstanceOf[Uint8Array]
+      .pipe(v => if v == null then None else Some(v))
+      .flatMap(uint8arr =>
+        Block.codec
+          .decode(
+            ByteVector
+              .fromUint8Array(uint8arr)
+              .toBitVector
           )
+          .toOption
+          .map(_.value)
       )
 
   private lazy val insertBlockStmt =

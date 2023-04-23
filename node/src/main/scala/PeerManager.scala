@@ -73,10 +73,6 @@ object PeerManager {
           case AnswerBlock(hash, Some(block)) if block.hash != hash =>
             println(s"got an invalid block message for ${hash.toHex}")
 
-          case AnswerBlock(hash, Some(block))
-              if !Blockchain.validateBlock(block) =>
-            println(s"got an invalid block for ${hash.toHex}")
-
           case AnswerBlock(hash, Some(block)) =>
             println(s"got block $hash")
             Database.insertBlock(hash, block) match {

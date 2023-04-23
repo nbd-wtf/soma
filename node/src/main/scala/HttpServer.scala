@@ -89,7 +89,7 @@ object HttpServer {
                       ByteVector32(ByteVector.fromValidHex(hash.str))
                     )
                   case (_, Some(height)) =>
-                    Database.getBlockAtHeight(height.num.toInt)
+                    Database.getBlocksAtHeight(height.num.toInt).headOption
                   case _ => throw new Exception("provide either hash or height")
                 })
                   .map(block => writeJs(block))
