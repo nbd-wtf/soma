@@ -1,0 +1,97 @@
+<style>
+  legend {
+    font-size: 200%;
+    text-align: right;
+  }
+  label,
+  button,
+  input {
+    display: block;
+    font-size: 110%;
+  }
+  label,
+  button {
+    margin-top: 10px;
+  }
+  label:first-of-type {
+    margin: 0;
+  }
+  input {
+    width: 100%;
+  }
+</style>
+
+<form>
+  <fieldset>
+    <legend>soma miner interface</legend>
+    <label
+      >miner node id:
+      <input
+        name="nodeid"
+        value="035aa926b4b467fc89819cade52f2639abe9d3909f0d0d6282d34bd3e068d78110"
+    /></label>
+    <label
+      >miner websocket address:
+      <input name="websocket" value="ws://107.189.30.195:3333"
+    /></label>
+    <label
+      >rune:
+      <input
+        name="rune"
+        value="1WlbzV1PyJI0rs-EPUZUpOCNudFQVaqmD2CIcFX9Mow9MiZtZXRob2Q9c29tYS1pbnZvaWNl"
+    /></label>
+    <label>soma transaction, as hex: <input name="tx" /></label>
+    <label
+      >amount to pay, in millisatoshis: <input name="amount" value="500000"
+    /></label>
+    <button>submit transaction</button>
+  </fieldset>
+</form>
+
+<pre
+  style="
+    font-family: monospace;
+    font-size: 130%;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    word-break: break-all;
+  "
+  id="output"
+></pre>
+
+<script src="lnsocket.js"></script>
+<script>
+  document.querySelector('form').addEventListener('submit', async ev => {
+    ev.preventDefault()
+
+    const LNSocket = await lnsocket_init()
+    const ln = LNSocket()
+
+    ln.genkey()
+
+    let {nodeid, websocket, rune, tx, amount} = ev.target
+
+    await ln.connect_and_init(nodeid.value, websocket.value)
+
+    try {
+      const res = await ln.rpc({
+        id: 0,
+        method: 'soma-invoice',
+        params: {
+          tx: tx.value,
+          amount_msat: parseInt(amount.value)
+        },
+        rune: rune.value
+      })
+
+      console.log(res)
+      window.output.innerHTML = `${JSON.stringify(
+        res.result || res.error,
+        undefined,
+        2
+      )}`
+    } catch (err) {
+      console.error(err)
+    }
+  })
+</script>
