@@ -45,6 +45,17 @@ After confirming that you own an asset you'll also need its current `counter` --
 - `sw decode <tx>` decodes transactions from hex into meaningful JSON.
 - `soma info` displays the current state of the chain and of the merge-mining.
 
+## I hate `tmux`!
+
+You can call commands from outside the container, from any terminal -- just don't close the terminal that is running the thing. Open a new terminal and type:
+
+- `docker exec soma sw mint`
+- `docker exec soma sw info`
+- `docker exec soma soma info`
+- `docker exec soma soma listallassets`
+
+and so on and so forth.
+
 ## Talking to a human
 
 Join https://t.me/spacechains
