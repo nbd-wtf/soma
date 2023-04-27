@@ -89,6 +89,22 @@ lazy val sw = project
   .enablePlugins(ScalaNativePlugin)
   .in(file("sw"))
 
+lazy val swWeb = project
+  .settings(
+    name := "soma-web-wallet",
+    scalaJSUseMainModuleInitializer := true,
+    libraryDependencies ++= Seq(
+      "com.armanbilge" %%% "calico" % "0.2.0-RC2",
+      "io.circe" %%% "circe-core" % "0.14.3",
+      "io.circe" %%% "circe-generic" % "0.14.3",
+      "io.circe" %%% "circe-parser" % "0.14.3",
+    ),
+    scalaJSLinkerConfig ~= { _.withModuleKind(ModuleKind.CommonJSModule) }
+  )
+  .dependsOn(core.js)
+  .enablePlugins(ScalaJSPlugin, EsbuildPlugin)
+  .in(file("sw-web-interface"))
+
 lazy val wallet = project
   .settings(
     name := "soma-wallet",
