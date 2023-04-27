@@ -38,8 +38,9 @@
       >rune:
       <input
         name="rune"
-        value="1WlbzV1PyJI0rs-EPUZUpOCNudFQVaqmD2CIcFX9Mow9MiZtZXRob2Q9c29tYS1pbnZvaWNl"
+        value="w6-9a7TEY6R2Sm0IV3t0XfeBJcqvfLhDBawQnxQGoo49NSZtZXRob2Rec29tYS0="
     /></label>
+    <button id="status">get status</button>
     <label>soma transaction, as hex: <input name="tx" /></label>
     <label
       >amount to pay, in millisatoshis: <input name="amount" value="500000"
@@ -61,26 +62,44 @@
 
 <script src="lnsocket.js"></script>
 <script>
+  let locked = false
+
   document.querySelector('form').addEventListener('submit', async ev => {
     ev.preventDefault()
+    if (locked) return
+    locked = true
 
+    let {tx, amount} = ev.target
+
+    await call('soma-invoice', {
+      tx: tx.value,
+      amount_msat: parseInt(amount.value)
+    })
+    locked = false
+  })
+
+  document.getElementById('status').addEventListener('click', async ev => {
+    ev.preventDefault()
+    ev.stopPropagation()
+    if (locked) return
+    locked = true
+    await call('soma-status', {})
+    locked = false
+  })
+
+  async function call(method, params) {
     const LNSocket = await lnsocket_init()
     const ln = LNSocket()
-
     ln.genkey()
 
-    let {nodeid, websocket, rune, tx, amount} = ev.target
-
+    let {nodeid, websocket, rune} = document.querySelector('form')
     await ln.connect_and_init(nodeid.value, websocket.value)
 
     try {
       const res = await ln.rpc({
         id: 0,
-        method: 'soma-invoice',
-        params: {
-          tx: tx.value,
-          amount_msat: parseInt(amount.value)
-        },
+        method,
+        params,
         rune: rune.value
       })
 
@@ -93,5 +112,5 @@
     } catch (err) {
       console.error(err)
     }
-  })
+  }
 </script>
